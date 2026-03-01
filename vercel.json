@@ -1,0 +1,48 @@
+{
+    "version": 2,
+    "buildCommand": "npm run vercel-build",
+    "outputDirectory": "dist/public",
+    "framework": null,
+    "rewrites": [
+        {
+            "source": "/api/trpc/:path*",
+            "destination": "/api/trpc"
+        },
+        {
+            "source": "/api/webhooks/:gateway",
+            "destination": "/api/webhooks"
+        },
+        {
+            "source": "/((?!api|assets).*)",
+            "destination": "/index.html"
+        }
+    ],
+    "headers": [
+        {
+            "source": "/assets/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "public, max-age=31536000, immutable"
+                }
+            ]
+        },
+        {
+            "source": "/api/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                },
+                {
+                    "key": "Access-Control-Allow-Methods",
+                    "value": "GET, POST, OPTIONS"
+                },
+                {
+                    "key": "Access-Control-Allow-Headers",
+                    "value": "Content-Type, Authorization"
+                }
+            ]
+        }
+    ]
+}
