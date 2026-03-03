@@ -1,41 +1,27 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { trpc } from "@/lib/trpc";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Plus, Settings, LogOut, TrendingUp, Users, DollarSign, Eye } from "lucide-react";
+import { Plus, Settings, LogOut, TrendingUp, Users, DollarSign, Eye, Home } from "lucide-react";
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useLocation } from "wouter";
 
 const COLORS = ["#F97316", "#FB923C", "#FDBA74", "#FED7AA"];
 
+// Demo data for the dashboard
+const demoUser = { name: "Criador Demo", email: "demo@privacy.com" };
+const demoProfiles = [
+  { id: 1, username: "modelademo", displayName: "Modelo Demo", profilePicUrl: null, bannerUrl: null, totalSubscribers: 247, totalPosts: 42, totalMedia: 38, totalExclusive: 15, totalLikes: 1250, isActive: true },
+  { id: 2, username: "fotodemo", displayName: "Fotografia Demo", profilePicUrl: null, bannerUrl: null, totalSubscribers: 128, totalPosts: 25, totalMedia: 24, totalExclusive: 10, totalLikes: 890, isActive: true },
+];
+
 export default function CreatorDashboard() {
-  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
+  const [, navigate] = useLocation();
 
-  const { data: profiles, isLoading: profilesLoading } = trpc.profiles.list.useQuery();
+  const user = demoUser;
+  const profiles = demoProfiles;
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Acesso Negado</h1>
-          <p className="text-gray-600">Você precisa estar autenticado para acessar o dashboard.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (profilesLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="animate-spin w-8 h-8" />
-      </div>
-    );
-  }
-
-  // Mock data for charts
   const salesData = [
     { month: "Jan", sales: 4000, revenue: 2400 },
     { month: "Fev", sales: 3000, revenue: 1398 },
@@ -50,8 +36,8 @@ export default function CreatorDashboard() {
     { name: "Não Convertidos", value: 35 },
   ];
 
-  const totalSubscribers = profiles?.reduce((acc, p) => acc + p.totalSubscribers, 0) || 0;
-  const totalBalance = profiles?.reduce((acc, p) => acc + (p.totalSubscribers * 29.9), 0) || 0;
+  const totalSubscribers = profiles.reduce((acc, p) => acc + p.totalSubscribers, 0);
+  const totalBalance = 15890;
   const conversionRate = 65;
 
   return (
@@ -73,8 +59,8 @@ export default function CreatorDashboard() {
               <p className="text-xs text-gray-600">{user.email}</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-orange-600" />
-            <Button variant="ghost" size="icon" onClick={logout}>
-              <LogOut className="w-5 h-5" />
+            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+              <Home className="w-5 h-5" />
             </Button>
           </div>
         </div>
@@ -175,7 +161,7 @@ export default function CreatorDashboard() {
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {conversionData.map((entry, index) => (
+                      {conversionData.map((_entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -211,53 +197,38 @@ export default function CreatorDashboard() {
               </Button>
             </div>
 
-            {!profiles || profiles.length === 0 ? (
-              <Card className="p-12 text-center bg-white border-0 shadow-md">
-                <p className="text-gray-600 mb-4">Você ainda não tem nenhum perfil criado.</p>
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white">Criar Primeiro Perfil</Button>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {profiles.map((profile) => (
-                  <Card key={profile.id} className="overflow-hidden bg-white border-0 shadow-md hover:shadow-lg transition">
-                    <div
-                      className="h-32 bg-gradient-to-r from-orange-300 to-orange-500"
-                      style={{
-                        backgroundImage: profile.bannerUrl ? `url(${profile.bannerUrl})` : undefined,
-                        backgroundSize: "cover",
-                      }}
-                    />
-                    <div className="p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <img
-                          src={profile.profilePicUrl || "https://via.placeholder.com/48"}
-                          alt={profile.displayName}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                        <div>
-                          <p className="font-bold">{profile.displayName}</p>
-                          <p className="text-sm text-gray-600">@{profile.username}</p>
-                        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {profiles.map((profile) => (
+                <Card key={profile.id} className="overflow-hidden bg-white border-0 shadow-md hover:shadow-lg transition">
+                  <div
+                    className="h-32 bg-gradient-to-r from-orange-300 to-orange-500"
+                  />
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-orange-600" />
+                      <div>
+                        <p className="font-bold">{profile.displayName}</p>
+                        <p className="text-sm text-gray-600">@{profile.username}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
-                        <div className="bg-orange-50 p-2 rounded">
-                          <p className="text-gray-600">Assinantes</p>
-                          <p className="font-bold text-orange-600">{profile.totalSubscribers}</p>
-                        </div>
-                        <div className="bg-orange-50 p-2 rounded">
-                          <p className="text-gray-600">Conteúdo</p>
-                          <p className="font-bold text-orange-600">{profile.totalPosts}</p>
-                        </div>
-                      </div>
-                      <Button variant="outline" className="w-full">
-                        <Settings className="w-4 h-4 mr-2" />
-                        Editar
-                      </Button>
                     </div>
-                  </Card>
-                ))}
-              </div>
-            )}
+                    <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
+                      <div className="bg-orange-50 p-2 rounded">
+                        <p className="text-gray-600">Assinantes</p>
+                        <p className="font-bold text-orange-600">{profile.totalSubscribers}</p>
+                      </div>
+                      <div className="bg-orange-50 p-2 rounded">
+                        <p className="text-gray-600">Conteúdo</p>
+                        <p className="font-bold text-orange-600">{profile.totalPosts}</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full" onClick={() => navigate(`/${profile.username}`)}>
+                      <Settings className="w-4 h-4 mr-2" />
+                      Ver Perfil
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
 
           {/* Content Tab */}
