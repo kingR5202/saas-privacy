@@ -1,409 +1,202 @@
-import { useParams } from "wouter";
-import { useState, useEffect, useRef } from "react";
-import { trpc } from "@/lib/trpc";
+import { useEffect, useState, useCallback } from "react";
+import { useRoute } from "wouter";
+import { supabase } from "@/lib/supabaseClient";
 import { Loader2 } from "lucide-react";
 
-/**
- * Public Profile page — matches the Privacy template (TELA PRIVACY PUSHINPAY)
- * Layout: Header → Banner → Profile Info → Bio → Subscription Plans → Content Tabs
- * Includes PIX checkout modal with QR code and payment polling.
- */
-
-interface PublicProfileParams {
-  username: string;
+interface Profile {
+  id: number; userId: number; username: string; displayName: string; bio: string | null;
+  profilePicUrl: string | null; bannerUrl: string | null;
+  totalSubscribers: number; totalPosts: number; totalMedia: number; totalExclusive: number; totalLikes: number;
+}
+interface Plan {
+  id: number; name: string; description: string | null; priceInCents: number; billingCycle: string;
+}
+interface GatewayConfig {
+  gateway: string; pushinpay_token?: string; blackout_public_key?: string; blackout_secret_key?: string;
+  novaplex_client_id?: string; novaplex_client_secret?: string; redirect_url?: string;
 }
 
 export default function PublicProfile() {
-  const params = useParams<PublicProfileParams>();
-  const username = params?.username || "";
+  const [, params] = useRoute("/:username");
+  const username = params?.username;
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
-  const { data: profile, isLoading: profileLoading } = trpc.profiles.getByUsername.useQuery(username, {
-    enabled: !!username,
-  });
-
-  const { data: content } = trpc.content.getByProfile.useQuery(profile?.id || 0, {
-    enabled: !!profile?.id,
-  });
-
-  const { data: plans } = trpc.subscriptionPlans.getByProfile.useQuery(profile?.id || 0, {
-    enabled: !!profile?.id,
-  });
-
-  const [activeTab, setActiveTab] = useState<"posts" | "media">("posts");
-  const [cookieAccepted, setCookieAccepted] = useState(() =>
-    typeof localStorage !== "undefined" ? !!localStorage.getItem("cookiesAccepted") : false
-  );
-  const [showReadMore, setShowReadMore] = useState(false);
-
-  // PIX modal state
-  const [pixModal, setPixModal] = useState<{
-    show: boolean;
-    loading: boolean;
-    pixCode?: string;
-    qrCodeBase64?: string;
-    transactionId?: string;
-    gateway?: string;
-    priceLabel?: string;
-    error?: string;
-  }>({ show: false, loading: false });
+  // PIX Modal state
+  const [showPixModal, setShowPixModal] = useState(false);
+  const [pixCode, setPixCode] = useState("");
+  const [pixQrBase64, setPixQrBase64] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixError, setPixError] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const [showQr, setShowQr] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<string>("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const createChargeMutation = trpc.payments.createCharge.useMutation();
+  // Active tab
+  const [activeTab, setActiveTab] = useState<"posts" | "media">("posts");
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
+  const loadProfile = useCallback(async () => {
+    if (!username) return;
+    setLoading(true);
+    const { data, error } = await supabase.from("profiles").select("*").eq("username", username).limit(1).single();
+    if (error || !data) { setNotFound(true); setLoading(false); return; }
+    setProfile(data as Profile);
 
-  if (profileLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F8F9FA]">
-        <Loader2 className="animate-spin w-8 h-8 text-[#E87A54]" />
-      </div>
-    );
-  }
+    // Load plans
+    const { data: plansData } = await supabase.from("subscription_plans").select("*").eq("profileId", data.id).eq("isActive", true);
+    setPlans((plansData || []) as Plan[]);
 
-  if (!profile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F8F9FA]">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Perfil não encontrado</h1>
-          <p className="text-gray-600">O criador que você está procurando não existe.</p>
-        </div>
-      </div>
-    );
-  }
+    // Load gateway config for this user
+    const { data: gwData } = await supabase.from("gateway_configs").select("*").eq("userId", data.userId).limit(1).single();
+    if (gwData) setGatewayConfig(gwData as GatewayConfig);
 
-  const formatPrice = (cents: number) => {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
-  };
+    setLoading(false);
+  }, [username]);
 
-  const handleSubscribe = async (planPriceCents: number, planName: string, planId?: number) => {
-    setPixModal({ show: true, loading: true });
-    setPaymentStatus("");
-    setShowQr(false);
+  useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  // Handle plan click → generate PIX
+  const handlePlanClick = async (plan: Plan) => {
+    if (!gatewayConfig || !profile) {
+      alert("Gateway de pagamento não configurado.");
+      return;
+    }
+    setSelectedPlan(plan);
+    setShowPixModal(true);
+    setPixLoading(true);
+    setPixError("");
+    setPixCode("");
+    setPixQrBase64("");
+    setPaymentStatus("Gerando cobrança PIX...");
 
     try {
-      const charge = await createChargeMutation.mutateAsync({
-        gateway: "pushinpay" as const,
-        amountCents: planPriceCents,
-        profileId: profile.id,
-        planId,
+      const resp = await fetch("/api/payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId: profile.id,
+          userId: profile.userId,
+          amount: plan.priceInCents,
+          gateway: gatewayConfig.gateway,
+        }),
       });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || "Erro ao gerar PIX");
 
-      setPixModal({
-        show: true,
-        loading: false,
-        pixCode: charge.qr_code,
-        qrCodeBase64: charge.qr_code_base64,
-        transactionId: charge.id,
-        gateway: "pushinpay",
-        priceLabel: formatPrice(planPriceCents),
-      });
+      setPixCode(result.qr_code || result.pixCopyPaste || result.brcode || "");
+      setPixQrBase64(result.qr_code_base64 || "");
+      setPaymentStatus("Aguardando pagamento...");
 
       // Start polling
-      let attempts = 0;
-      pollRef.current = setInterval(async () => {
-        attempts++;
-        if (attempts > 120) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          return;
-        }
-        // We'll use a simple fetch to check status since useQuery isn't ideal for polling
-        try {
-          const res = await fetch(`/api/trpc/payments.checkStatus?input=${encodeURIComponent(JSON.stringify({ gateway: "pushinpay", transactionId: charge.id }))}`);
-          const json = await res.json();
-          const result = json?.result?.data;
-          if (result?.status === "paid") {
-            setPaymentStatus("paid");
-            if (pollRef.current) clearInterval(pollRef.current);
-          } else if (result?.status === "expired") {
-            setPaymentStatus("expired");
-            if (pollRef.current) clearInterval(pollRef.current);
-          }
-        } catch { }
-      }, 5000);
+      if (result.id) {
+        const interval = setInterval(async () => {
+          try {
+            const statusResp = await fetch(`/api/payment?id=${result.id}&profileId=${profile.id}`);
+            const statusData = await statusResp.json();
+            if (["paid", "completed", "succeeded"].includes(statusData.status)) {
+              clearInterval(interval);
+              setPaymentStatus("Pagamento confirmado! ✅");
+              if (gatewayConfig.redirect_url) {
+                setTimeout(() => { window.location.href = gatewayConfig.redirect_url!; }, 2000);
+              }
+            }
+          } catch { } // eslint-disable-line
+        }, 5000);
+        // Auto-clear after 10 min
+        setTimeout(() => clearInterval(interval), 600000);
+      }
     } catch (err: any) {
-      setPixModal({
-        show: true,
-        loading: false,
-        error: err?.message || "Erro ao gerar PIX",
-      });
+      setPixError(err.message);
+      setPaymentStatus("");
+    } finally {
+      setPixLoading(false);
     }
-  };
-
-  const closePixModal = () => {
-    setPixModal({ show: false, loading: false });
-    if (pollRef.current) clearInterval(pollRef.current);
   };
 
   const copyPixCode = () => {
-    if (pixModal.pixCode) {
-      navigator.clipboard.writeText(pixModal.pixCode);
-    }
+    navigator.clipboard.writeText(pixCode);
   };
 
-  const acceptCookies = () => {
-    setCookieAccepted(true);
-    localStorage.setItem("cookiesAccepted", "true");
-  };
-
-  // Default plans if none configured
-  const displayPlans = plans && plans.length > 0 ? plans : [
-    { id: 0, name: "1 mês", priceInCents: 1990, billingCycle: "monthly" as const },
-  ];
+  if (loading) return <div className="flex items-center justify-center min-h-screen bg-white"><Loader2 className="animate-spin w-8 h-8" /></div>;
+  if (notFound || !profile) return (
+    <div className="flex items-center justify-center min-h-screen bg-white">
+      <div className="text-center"><h1 className="text-3xl font-bold mb-2">Perfil não encontrado</h1>
+        <p className="text-gray-600">O perfil @{username} não existe.</p></div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen" style={{ background: "#F8F9FA", fontFamily: "'Lato', sans-serif" }}>
-      {/* Privacy Header */}
-      <header
-        className="w-full bg-white border-b border-gray-100"
-        style={{ padding: "15px 0" }}
-      >
-        <div className="mx-auto flex justify-center items-center" style={{ maxWidth: 900, minHeight: 35 }}>
-          <svg className="h-[18px] w-auto" viewBox="0 0 120 24" fill="none">
-            <text x="0" y="18" fontFamily="Lato, Arial, sans-serif" fontWeight="900" fontSize="20" fill="#1a1a1a">
-              Privacy
-            </text>
-          </svg>
-        </div>
+    <div className="min-h-screen bg-[#f8f8f8]" style={{ fontFamily: "'Segoe UI', Arial, sans-serif" }}>
+      {/* Top Header */}
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <img src="/images/privacy-logo.svg" alt="Privacy" className="h-6" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <span className="font-bold text-lg text-gray-800">Privacy</span>
       </header>
 
-      {/* Main Container */}
-      <div
-        className="mx-auto bg-white overflow-hidden relative"
-        style={{
-          maxWidth: 1110,
-          borderRadius: 25,
-          border: "1px solid #dbdbdb",
-          boxShadow: "0 5px 25px rgba(0,0,0,0.07)",
-          marginTop: -0,
-          marginBottom: 20,
-        }}
-      >
+      <div className="max-w-lg mx-auto bg-white min-h-screen shadow-sm">
         {/* Cover Photo */}
-        <div
-          className="w-full bg-gradient-to-r from-orange-200 to-orange-400"
-          style={{
-            height: 90,
-            backgroundImage: profile.bannerUrl ? `url(${profile.bannerUrl})` : undefined,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            borderBottom: "1px solid #F0F0F0",
-          }}
-        />
-
-        {/* Profile Info Bar */}
-        <div
-          className="flex items-end justify-between relative"
-          style={{ padding: "0 25px", marginTop: -50 }}
-        >
-          <img
-            src={profile.profilePicUrl || "https://via.placeholder.com/100"}
-            alt={profile.displayName}
-            className="rounded-full border-4 border-white object-cover"
-            style={{ width: 100, height: 100, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}
-          />
-          <div className="flex gap-4 text-sm font-medium pb-2" style={{ paddingTop: 50 }}>
-            <span className="flex items-center gap-1">
-              <i className="text-gray-400">📷</i> {profile.totalPosts}
-            </span>
-            <span className="flex items-center gap-1">
-              <i className="text-gray-400">▶</i> {profile.totalMedia}
-            </span>
-            <span className="flex items-center gap-1">
-              <i className="text-gray-400">🔒</i> {profile.totalExclusive}
-            </span>
-            <span className="flex items-center gap-1">
-              <i className="text-gray-400">❤</i> {profile.totalLikes > 1000 ? `${(profile.totalLikes / 1000).toFixed(0)}K` : profile.totalLikes}
-            </span>
-          </div>
+        <div className="relative h-44 bg-gradient-to-r from-orange-300 to-orange-500"
+          style={profile.bannerUrl ? { backgroundImage: `url(${profile.bannerUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
         </div>
 
-        {/* Content */}
-        <div style={{ padding: 25 }}>
-          {/* Profile Details */}
-          <h1 className="text-lg font-black flex items-center gap-2" style={{ marginTop: -15 }}>
-            {profile.displayName}
-            <span
-              className="inline-flex items-center justify-center rounded-full text-xs"
-              style={{
-                color: "#E87A54",
-                border: "1.5px solid #E87A54",
-                width: 16,
-                height: 16,
-                fontSize: 10,
-              }}
-            >
-              ✓
-            </span>
-          </h1>
-          <p className="text-gray-500 text-lg mb-4">@{profile.username}</p>
-
-          {/* Bio */}
-          {profile.bio && (
-            <div className="text-base leading-relaxed mb-5">
-              <p>
-                {showReadMore ? profile.bio : profile.bio.slice(0, 150)}
-                {profile.bio.length > 150 && !showReadMore && "..."}
-              </p>
-              {profile.bio.length > 150 && (
-                <button
-                  className="font-bold text-[#E87A54] cursor-pointer border-none bg-transparent"
-                  onClick={() => setShowReadMore(!showReadMore)}
-                >
-                  {showReadMore ? "Ler menos" : "Ler mais"}
-                </button>
-              )}
+        {/* Profile Info */}
+        <div className="relative px-4 pb-4">
+          <div className="flex items-end gap-3 -mt-10">
+            {profile.profilePicUrl ? (
+              <img src={profile.profilePicUrl} alt="" className="w-20 h-20 rounded-full border-4 border-white object-cover shadow-md" />
+            ) : (
+              <div className="w-20 h-20 rounded-full border-4 border-white bg-gradient-to-br from-orange-400 to-orange-600 shadow-md" />
+            )}
+            <div className="flex gap-4 text-sm text-gray-600 mb-1">
+              <span>📷 {profile.totalPosts}</span>
+              <span>🎥 {profile.totalMedia}</span>
+              <span>🔒 {profile.totalExclusive}</span>
+              <span>❤️ {profile.totalLikes > 1000 ? `${(profile.totalLikes / 1000).toFixed(0)}K` : profile.totalLikes}</span>
             </div>
-          )}
-
-          {/* Social Links */}
-          <div className="flex gap-5 text-xl text-gray-800 mb-6">
-            <span className="cursor-pointer hover:text-[#E87A54] transition">𝕏</span>
-            <span className="cursor-pointer hover:text-[#E87A54] transition">TikTok</span>
           </div>
 
-          {/* Subscription Plans */}
-          <div className="mb-6">
-            <h2 className="text-sm font-bold text-gray-500 mb-3">Assinaturas</h2>
-            {displayPlans.map((plan) => (
-              <button
-                key={plan.id}
-                className="w-full flex justify-between items-center mb-2 rounded-2xl border-none text-base font-bold cursor-pointer"
-                style={{
-                  padding: "16px 20px",
-                  color: "#4F2E1B",
-                  background: "linear-gradient(90deg, rgba(246,148,73,1) 0%, rgba(250,197,158,1) 50%, rgba(247,168,153,1) 100%)",
-                }}
-                onClick={() => handleSubscribe(plan.priceInCents, plan.name, plan.id)}
-              >
-                <span>{plan.name}</span>
-                <span>{formatPrice(plan.priceInCents)}</span>
+          <h1 className="text-xl font-bold mt-3">{profile.displayName} <span className="text-blue-500">✓</span></h1>
+          <p className="text-gray-500 text-sm">@{profile.username}</p>
+          {profile.bio && <p className="text-gray-700 text-sm mt-2 leading-relaxed">{profile.bio}</p>}
+        </div>
+
+        {/* Subscription Plans */}
+        {plans.length > 0 && (
+          <div className="px-4 py-4 border-t">
+            <h2 className="font-bold text-lg mb-3">Assinaturas</h2>
+            {plans.map(plan => (
+              <button key={plan.id} onClick={() => handlePlanClick(plan)}
+                className="w-full flex items-center justify-between px-4 py-3 mb-2 rounded-xl bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 hover:border-orange-400 transition">
+                <span className="font-medium text-gray-800">{plan.name}</span>
+                <span className="font-bold text-orange-600">R$ {(plan.priceInCents / 100).toFixed(2)}</span>
               </button>
             ))}
           </div>
+        )}
 
-          {/* Content Tabs */}
-          <div className="border-t border-gray-100 mt-6 pt-5">
-            <div className="flex border border-gray-100 rounded-xl overflow-hidden mb-5">
-              <button
-                className={`flex-1 py-4 text-center font-bold text-sm border-none cursor-pointer transition-all ${activeTab === "posts" ? "text-[#E87A54] border-b-[3px] border-b-[#E87A54] bg-white" : "text-gray-500 bg-white"}`}
-                onClick={() => setActiveTab("posts")}
-              >
-                📱 {profile.totalPosts} Postagens
-              </button>
-              <button
-                className={`flex-1 py-4 text-center font-bold text-sm border-none cursor-pointer transition-all ${activeTab === "media" ? "text-[#E87A54] border-b-[3px] border-b-[#E87A54] bg-white" : "text-gray-500 bg-white"}`}
-                onClick={() => setActiveTab("media")}
-              >
-                📸 {profile.totalMedia} Mídias
-              </button>
-            </div>
-
-            {/* Posts tab */}
-            {activeTab === "posts" && (
-              <div>
-                {content && content.filter(c => !c.isExclusive).length > 0 ? (
-                  content.filter(c => !c.isExclusive).map(item => (
-                    <div key={item.id} className="border border-gray-100 rounded-2xl overflow-hidden mb-4">
-                      <div className="flex items-center p-3">
-                        <img
-                          src={profile.profilePicUrl || "https://via.placeholder.com/45"}
-                          alt=""
-                          className="w-11 h-11 rounded-full mr-3 object-cover"
-                        />
-                        <div className="flex-1">
-                          <span className="font-bold">{profile.displayName} <span className="text-[#E87A54] text-xs">✓</span></span>
-                          <br />
-                          <span className="text-gray-500 text-sm">@{profile.username}</span>
-                        </div>
-                      </div>
-                      <div
-                        className="border-t border-b border-gray-100 flex items-center justify-center"
-                        style={{
-                          backgroundColor: "#F5F1ED",
-                          backgroundImage: "radial-gradient(circle, rgba(232,122,84,0.1), transparent 70%)",
-                        }}
-                      >
-                        {item.contentType === "video" ? (
-                          <video
-                            src={item.mediaUrl}
-                            className="w-full h-auto block"
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <img src={item.mediaUrl} alt={item.title || ""} className="w-full h-auto block" />
-                        )}
-                      </div>
-                      <div className="flex justify-between p-4 text-2xl text-gray-600">
-                        <div className="flex gap-5">
-                          <span>♡</span>
-                          <span>💬</span>
-                          <span className="border-2 border-gray-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">$</span>
-                        </div>
-                        <span>🔖</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  /* Locked content placeholder */
-                  <div className="border border-gray-100 rounded-2xl overflow-hidden">
-                    <div className="flex items-center p-3">
-                      <img
-                        src={profile.profilePicUrl || "https://via.placeholder.com/45"}
-                        alt=""
-                        className="w-11 h-11 rounded-full mr-3 object-cover"
-                      />
-                      <div className="flex-1">
-                        <span className="font-bold">{profile.displayName} <span className="text-[#E87A54] text-xs">✓</span></span>
-                        <br />
-                        <span className="text-gray-500 text-sm">@{profile.username}</span>
-                      </div>
-                    </div>
-                    <div
-                      className="py-16 flex flex-col items-center justify-center border-t border-b border-gray-100"
-                      style={{
-                        backgroundColor: "#F5F1ED",
-                        backgroundImage: "radial-gradient(circle, rgba(232,122,84,0.1), transparent 70%)",
-                      }}
-                    >
-                      <span className="text-5xl text-gray-400 mb-4">🔒</span>
-                      <p className="text-gray-600 font-bold">Conteúdo exclusivo para assinantes</p>
-                    </div>
-                    <div className="flex justify-between p-4 text-2xl text-gray-600">
-                      <div className="flex gap-5">
-                        <span>♡</span>
-                        <span>💬</span>
-                        <span className="border-2 border-gray-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">$</span>
-                      </div>
-                      <span>🔖</span>
-                    </div>
-                  </div>
-                )}
+        {/* Content Tabs */}
+        <div className="border-t">
+          <div className="flex">
+            <button className={`flex-1 py-3 text-center text-sm font-medium border-b-2 transition ${activeTab === "posts" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-500"}`}
+              onClick={() => setActiveTab("posts")}>📱 Postagens</button>
+            <button className={`flex-1 py-3 text-center text-sm font-medium border-b-2 transition ${activeTab === "media" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-500"}`}
+              onClick={() => setActiveTab("media")}>📸 Mídias</button>
+          </div>
+          <div className="p-4">
+            {activeTab === "posts" ? (
+              <div className="bg-gray-50 rounded-xl p-8 text-center">
+                <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">🔒</div>
+                <p className="font-medium text-gray-800">Conteúdo Exclusivo</p>
+                <p className="text-sm text-gray-500">Assine para desbloquear todo o conteúdo</p>
               </div>
-            )}
-
-            {/* Media tab */}
-            {activeTab === "media" && (
-              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-                {[1, 2, 3, 4].map(i => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-center text-3xl text-gray-300 rounded-xl"
-                    style={{
-                      aspectRatio: "1/1",
-                      backgroundColor: "#F5F1ED",
-                      backgroundImage: "radial-gradient(circle, rgba(200,200,200,0.1), transparent 70%)",
-                    }}
-                  >
-                    🔒
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                  <div key={i} className="aspect-square bg-gray-200 rounded-lg flex items-center justify-center">
+                    <span className="text-gray-400 text-2xl">🔒</span>
                   </div>
                 ))}
               </div>
@@ -412,154 +205,65 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* Cookie Popup */}
-      {!cookieAccepted && (
-        <div
-          className="fixed bottom-0 left-0 w-full z-[1000] bg-[#F1F1F1] border-t border-gray-100 p-5"
-          style={{
-            animation: "slideUp 0.5s ease-in-out forwards",
-          }}
-        >
-          <div className="mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4" style={{ maxWidth: 1110 }}>
-            <p className="text-base font-medium text-gray-600">
-              Privacy utiliza cookies para melhorar nossos serviços. Se você aceitar, usaremos
-              esses dados para personalização. Para mais informações, leia nossa{" "}
-              <a href="#" className="text-[#E87A54] font-bold underline">
-                Política de Privacidade
-              </a>
-              .
-            </p>
-            <button
-              className="w-full md:max-w-[250px] rounded-full py-2 px-5 font-bold text-sm text-white border-none cursor-pointer"
-              style={{ background: "linear-gradient(45deg, #F58170, #F9AF77)" }}
-              onClick={acceptCookies}
-            >
-              Aceitar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* PIX Checkout Modal */}
-      {pixModal.show && (
-        <div
-          className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4"
-          onClick={(e) => e.target === e.currentTarget && closePixModal()}
-        >
-          <div className="bg-white rounded-2xl max-w-[400px] w-full overflow-hidden relative">
-            {/* Close button */}
-            <button
-              className="absolute top-3 right-3 bg-black/50 text-white border-none rounded-full w-8 h-8 text-lg flex items-center justify-center cursor-pointer z-10"
-              onClick={closePixModal}
-            >
-              ×
-            </button>
-
-            {pixModal.loading ? (
-              <div className="p-12 text-center">
-                <Loader2 className="animate-spin w-8 h-8 mx-auto mb-3 text-[#E87A54]" />
-                <p className="text-gray-600">Gerando cobrança Pix...</p>
-              </div>
-            ) : pixModal.error ? (
-              <div className="p-12 text-center">
-                <p className="text-red-600 font-bold mb-2">Erro</p>
-                <p className="text-gray-600">{pixModal.error}</p>
-              </div>
+      {/* PIX Modal */}
+      {showPixModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowPixModal(false)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="relative h-24 bg-gradient-to-r from-orange-300 to-orange-500"
+              style={profile.bannerUrl ? { backgroundImage: `url(${profile.bannerUrl})`, backgroundSize: "cover" } : {}}>
+              <button className="absolute top-2 right-2 w-8 h-8 bg-black/40 text-white rounded-full text-lg" onClick={() => setShowPixModal(false)}>×</button>
+            </div>
+            {profile.profilePicUrl ? (
+              <img src={profile.profilePicUrl} alt="" className="w-20 h-20 rounded-full border-4 border-white mx-auto -mt-10 relative z-10 object-cover" />
             ) : (
-              <>
-                {/* Modal header image */}
-                <div
-                  className="w-full h-[120px] bg-gradient-to-r from-orange-200 to-orange-400 object-cover"
-                  style={{
-                    backgroundImage: profile.bannerUrl ? `url(${profile.bannerUrl})` : undefined,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
-                />
-                <img
-                  src={profile.profilePicUrl || "https://via.placeholder.com/90"}
-                  alt=""
-                  className="w-[90px] h-[90px] rounded-full border-4 border-white mx-auto block relative z-5 object-cover"
-                  style={{ marginTop: -45 }}
-                />
+              <div className="w-20 h-20 rounded-full border-4 border-white mx-auto -mt-10 relative z-10 bg-gradient-to-br from-orange-400 to-orange-600" />
+            )}
 
-                <div className="p-6 text-center">
-                  <h2 className="text-xl font-bold text-gray-900 mt-2">{profile.displayName}</h2>
-                  <p className="text-gray-500 text-sm">@{profile.username}</p>
+            <div className="p-6 text-center">
+              <h2 className="font-bold text-xl">{profile.displayName}</h2>
+              <p className="text-gray-500 text-sm">@{profile.username}</p>
 
-                  <h3 className="text-lg font-bold text-gray-800 text-left mt-6 mb-3">Benefícios exclusivos</h3>
-                  <ul className="text-left mb-6 space-y-2 text-gray-600">
-                    <li className="flex items-center gap-2"><span className="text-[#F9A826]">✓</span> Acesso ao conteúdo</li>
-                    <li className="flex items-center gap-2"><span className="text-[#F9A826]">✓</span> Chat exclusivo com o criador</li>
-                    <li className="flex items-center gap-2"><span className="text-[#F9A826]">✓</span> Cancele a qualquer hora</li>
+              {pixLoading ? (
+                <div className="py-8"><Loader2 className="animate-spin w-8 h-8 mx-auto text-orange-500" /><p className="text-sm mt-3 text-gray-600">{paymentStatus}</p></div>
+              ) : pixError ? (
+                <div className="py-6 text-red-500"><p className="font-medium">Erro</p><p className="text-sm">{pixError}</p></div>
+              ) : (
+                <>
+                  <h3 className="font-bold text-left mt-4 mb-2">Benefícios exclusivos</h3>
+                  <ul className="text-left text-sm text-gray-600 space-y-1 mb-4">
+                    <li>✅ Acesso ao conteúdo</li>
+                    <li>✅ Chat exclusivo com o criador</li>
+                    <li>✅ Cancele a qualquer hora</li>
                   </ul>
 
-                  <h3 className="text-lg font-bold text-gray-800 text-left mb-3">Formas de pagamento</h3>
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-gray-500">Valor</span>
-                    <span className="text-lg font-bold text-gray-900">{pixModal.priceLabel}</span>
+                  <div className="flex justify-between items-center bg-gray-50 rounded-lg px-4 py-3 mb-3">
+                    <span className="text-gray-600">Valor</span>
+                    <span className="font-bold text-lg">R$ {selectedPlan ? (selectedPlan.priceInCents / 100).toFixed(2) : "0.00"}</span>
                   </div>
 
-                  {/* PIX code input */}
-                  <input
-                    className="w-full p-3 mb-3 rounded-lg border border-gray-200 text-center text-sm bg-gray-50"
-                    readOnly
-                    value={pixModal.pixCode || ""}
-                  />
-
-                  {/* Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      className="flex-1 py-3 rounded-lg font-semibold text-sm cursor-pointer border-none bg-gray-200 text-gray-700"
-                      onClick={() => setShowQr(!showQr)}
-                    >
-                      {showQr ? "Ocultar QR Code" : "Ver QR Code"}
-                    </button>
-                    <button
-                      className="flex-1 py-3 rounded-lg font-semibold text-sm cursor-pointer border-none bg-[#F9A826] text-white"
-                      onClick={copyPixCode}
-                    >
-                      Copiar chave
-                    </button>
-                  </div>
-
-                  {/* QR Code */}
-                  {showQr && pixModal.qrCodeBase64 && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg flex justify-center">
-                      <img src={pixModal.qrCodeBase64} alt="QR Code Pix" className="w-48 h-48 rounded-lg" />
-                    </div>
+                  {pixCode && (
+                    <>
+                      <input readOnly value={pixCode} className="w-full px-3 py-2 bg-gray-50 border rounded-lg text-xs font-mono text-center mb-3" />
+                      <div className="flex gap-2">
+                        <button className="flex-1 py-3 bg-gray-200 rounded-lg font-semibold text-sm"
+                          onClick={() => setShowQr(!showQr)}>{showQr ? "Ocultar QR" : "Ver QR Code"}</button>
+                        <button className="flex-1 py-3 bg-orange-500 text-white rounded-lg font-semibold text-sm"
+                          onClick={copyPixCode}>Copiar Chave</button>
+                      </div>
+                      {showQr && pixQrBase64 && (
+                        <div className="mt-4 flex justify-center"><img src={pixQrBase64} alt="QR Code PIX" className="w-48 h-48 rounded-lg" /></div>
+                      )}
+                    </>
                   )}
 
-                  {/* Payment status */}
-                  {paymentStatus === "paid" && (
-                    <div className="mt-4 text-center font-bold text-green-600">
-                      ✓ Pagamento aprovado! Acesso liberado.
-                    </div>
-                  )}
-                  {paymentStatus === "expired" && (
-                    <div className="mt-4 text-center font-bold text-red-600">
-                      QR Code expirado. Tente gerar novamente.
-                    </div>
-                  )}
-                  {!paymentStatus && !pixModal.loading && (
-                    <div className="mt-4 text-center text-sm text-gray-500">
-                      Aguardando pagamento...
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+                  {paymentStatus && <p className="text-sm mt-4 font-medium text-orange-600">{paymentStatus}</p>}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
-
-      {/* CSS Animation for cookie popup */}
-      <style>{`
-        @keyframes slideUp {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }
