@@ -1,0 +1,160 @@
+<?php
+/**
+ * Payment API Proxy for Hostinger
+ * Reads gateway config from Supabase and routes to PushinPay/Blackout/NovaPlex
+ */
+
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+
+// Supabase config
+$SUPABASE_URL = 'https://qcvrmbqyawmgezifunkh.supabase.co';
+$SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjdnJtYnF5YXdtZ2V6aWZ1bmtoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjM4OTA0OSwiZXhwIjoyMDg3OTY1MDQ5fQ.gvmKFOBi4dk-bMAO5dBPDCVVyAKRxnGOjFYxfjlgFnQ';
+
+function supabaseGet($table, $filters) {
+    global $SUPABASE_URL, $SUPABASE_KEY;
+    $query = http_build_query($filters);
+    $url = "$SUPABASE_URL/rest/v1/$table?$query";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $SUPABASE_KEY",
+            "Authorization: Bearer $SUPABASE_KEY",
+            'Accept: application/json',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($resp, true);
+}
+
+function generateCPF() {
+    $n = [];
+    for ($i = 0; $i < 9; $i++) $n[] = rand(0, 9);
+    $d1 = 0;
+    for ($i = 0; $i < 9; $i++) $d1 += $n[$i] * (10 - $i);
+    $d1 = 11 - ($d1 % 11);
+    if ($d1 >= 10) $d1 = 0;
+    $n[] = $d1;
+    $d2 = 0;
+    for ($i = 0; $i < 10; $i++) $d2 += $n[$i] * (11 - $i);
+    $d2 = 11 - ($d2 % 11);
+    if ($d2 >= 10) $d2 = 0;
+    $n[] = $d2;
+    return implode('', $n);
+}
+
+function apiCall($url, $method = 'GET', $headers = [], $body = null) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    if ($method === 'POST') {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    }
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['code' => $code, 'body' => json_decode($resp, true) ?: $resp];
+}
+
+// Get input
+$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$userId = $input['userId'] ?? $_GET['userId'] ?? null;
+$profileId = $input['profileId'] ?? $_GET['profileId'] ?? null;
+
+if (!$userId) {
+    echo json_encode(['error' => 'Missing userId']); http_response_code(400); exit;
+}
+
+// Get gateway config from Supabase
+$configs = supabaseGet('gateway_configs', ['userId' => "eq.$userId", 'select' => '*']);
+if (empty($configs) || !isset($configs[0])) {
+    echo json_encode(['error' => 'Gateway não configurado. Configure no Dashboard.']); http_response_code(400); exit;
+}
+$gw = $configs[0];
+
+// POST: Create payment
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $amount = intval($input['amount'] ?? 0);
+    if (!$amount) { echo json_encode(['error' => 'Amount required']); http_response_code(400); exit; }
+
+    switch ($gw['gateway']) {
+        case 'pushinpay':
+            $token = $gw['pushinpay_token'] ?? '';
+            if (!$token) { echo json_encode(['error' => 'Token PushinPay não configurado']); http_response_code(400); exit; }
+            $result = apiCall('https://api.pushinpay.com.br/api/pix/cashIn', 'POST', [
+                'Content-Type: application/json', 'Accept: application/json', "Authorization: Bearer $token"
+            ], json_encode(['value' => $amount]));
+            echo json_encode($result['body']); exit;
+
+        case 'blackout':
+            $pub = $gw['blackout_public_key'] ?? '';
+            $sec = $gw['blackout_secret_key'] ?? '';
+            if (!$pub || !$sec) { echo json_encode(['error' => 'Chaves Blackout não configuradas']); http_response_code(400); exit; }
+            $auth = 'Basic ' . base64_encode("$pub:$sec");
+            $result = apiCall('https://api.blackpayments.pro/v1/transactions', 'POST', [
+                'Content-Type: application/json', "Authorization: $auth"
+            ], json_encode([
+                'amount' => $amount, 'paymentMethod' => 'pix',
+                'customer' => ['name' => 'Cliente', 'email' => 'cliente@anonimo.com', 'document' => ['number' => generateCPF(), 'type' => 'cpf']],
+                'items' => [['title' => 'Acesso Premium', 'unitPrice' => $amount, 'quantity' => 1, 'tangible' => false]],
+            ]));
+            echo json_encode($result['body']); exit;
+
+        case 'novaplex':
+            $cid = $gw['novaplex_client_id'] ?? '';
+            $csec = $gw['novaplex_client_secret'] ?? '';
+            if (!$cid || !$csec) { echo json_encode(['error' => 'Credenciais NovaPlex não configuradas']); http_response_code(400); exit; }
+            // Auth
+            $authRes = apiCall('https://api.novaplex.com.br/api/auth/login', 'POST', ['Content-Type: application/json'],
+                json_encode(['client_id' => $cid, 'client_secret' => $csec]));
+            $token = $authRes['body']['token'] ?? null;
+            if (!$token) { echo json_encode(['error' => 'NovaPlex auth failed']); http_response_code(500); exit; }
+            $extId = 'ord-' . time() . '-' . rand(100, 999);
+            $result = apiCall('https://api.novaplex.com.br/api/payments/deposit', 'POST', [
+                'Content-Type: application/json', "Authorization: Bearer $token"
+            ], json_encode(['amount' => $amount / 100, 'external_id' => $extId, 'payer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
+            $data = $result['body'];
+            $qr = $data['qrCodeResponse']['qrcode'] ?? $data['qrcode'] ?? '';
+            echo json_encode(['id' => $data['id'] ?? $extId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount]); exit;
+    }
+}
+
+// GET: Check payment status
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
+    $id = $_GET['id'];
+    switch ($gw['gateway']) {
+        case 'pushinpay':
+            $token = $gw['pushinpay_token'];
+            $result = apiCall("https://api.pushinpay.com.br/api/transactions/" . urlencode($id), 'GET', [
+                'Accept: application/json', "Authorization: Bearer $token"
+            ]);
+            echo json_encode($result['body']); exit;
+
+        case 'blackout':
+            $auth = 'Basic ' . base64_encode($gw['blackout_public_key'] . ':' . $gw['blackout_secret_key']);
+            $result = apiCall("https://api.blackpayments.pro/v1/transactions/" . urlencode($id), 'GET', [
+                'Accept: application/json', "Authorization: $auth"
+            ]);
+            echo json_encode($result['body']); exit;
+
+        case 'novaplex':
+            $authRes = apiCall('https://api.novaplex.com.br/api/auth/login', 'POST', ['Content-Type: application/json'],
+                json_encode(['client_id' => $gw['novaplex_client_id'], 'client_secret' => $gw['novaplex_client_secret']]));
+            $token = $authRes['body']['token'] ?? null;
+            $result = apiCall("https://api.novaplex.com.br/api/payments/deposit/" . urlencode($id), 'GET', [
+                "Authorization: Bearer $token", 'Accept: application/json'
+            ]);
+            $st = strtolower($result['body']['status'] ?? 'pending');
+            $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
+            echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
+    }
+}
+
+echo json_encode(['error' => 'Invalid request']);

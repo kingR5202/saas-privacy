@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Settings, LogOut, Home, Loader2, Save, Trash2, ExternalLink, Copy } from "lucide-react";
+import { Plus, Settings, LogOut, Home, Loader2, Save, Trash2, ExternalLink, Copy, Upload, ImagePlus, Pencil } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 
@@ -39,6 +39,21 @@ export default function CreatorDashboard() {
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [newProfile, setNewProfile] = useState({ username: "", displayName: "", bio: "", profilePicUrl: "", bannerUrl: "" });
   const [saving, setSaving] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [uploadingPic, setUploadingPic] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+
+  // Image upload helper — converts to WebP on server
+  const uploadImage = async (file: File): Promise<string | null> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const resp = await fetch('/api/upload.php', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) { alert('Erro ao enviar: ' + (data.error || 'Desconhecido')); return null; }
+      return data.url;
+    } catch (err) { alert('Erro de conexão ao enviar imagem'); return null; }
+  };
 
   // Gateway state
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>({ gateway: "pushinpay" });
@@ -107,6 +122,21 @@ export default function CreatorDashboard() {
     if (!confirm("Tem certeza que deseja excluir este perfil?")) return;
     await supabase.from("profiles").delete().eq("id", id);
     loadProfiles();
+  };
+
+  // Update profile
+  const handleUpdateProfile = async () => {
+    if (!editingProfile) return;
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({
+      displayName: editingProfile.displayName,
+      bio: editingProfile.bio,
+      profilePicUrl: editingProfile.profilePicUrl,
+      bannerUrl: editingProfile.bannerUrl,
+    }).eq("id", editingProfile.id);
+    if (error) alert("Erro: " + error.message);
+    else { setEditingProfile(null); loadProfiles(); }
+    setSaving(false);
   };
 
   // Save gateway config
@@ -202,14 +232,52 @@ export default function CreatorDashboard() {
                       value={newProfile.bio} onChange={e => setNewProfile({ ...newProfile, bio: e.target.value })} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">URL da Foto de Perfil</label>
-                    <input className="w-full px-3 py-2 border rounded-lg" placeholder="https://..." value={newProfile.profilePicUrl}
-                      onChange={e => setNewProfile({ ...newProfile, profilePicUrl: e.target.value })} />
+                    <label className="block text-sm font-medium mb-1">Foto de Perfil</label>
+                    <div className="flex items-center gap-3">
+                      {newProfile.profilePicUrl ? (
+                        <img src={newProfile.profilePicUrl} alt="" className="w-16 h-16 rounded-full object-cover border" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center border"><ImagePlus className="w-6 h-6 text-gray-400" /></div>
+                      )}
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          setUploadingPic(true);
+                          const url = await uploadImage(file);
+                          if (url) setNewProfile(p => ({ ...p, profilePicUrl: url }));
+                          setUploadingPic(false);
+                        }} />
+                        <span className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                          {uploadingPic ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          {uploadingPic ? 'Enviando...' : 'Escolher Foto'}
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Convertida para WebP automaticamente</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">URL do Banner</label>
-                    <input className="w-full px-3 py-2 border rounded-lg" placeholder="https://..." value={newProfile.bannerUrl}
-                      onChange={e => setNewProfile({ ...newProfile, bannerUrl: e.target.value })} />
+                    <label className="block text-sm font-medium mb-1">Banner / Capa</label>
+                    <div className="flex items-center gap-3">
+                      {newProfile.bannerUrl ? (
+                        <img src={newProfile.bannerUrl} alt="" className="w-32 h-16 rounded-lg object-cover border" />
+                      ) : (
+                        <div className="w-32 h-16 rounded-lg bg-gray-100 flex items-center justify-center border"><ImagePlus className="w-6 h-6 text-gray-400" /></div>
+                      )}
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          setUploadingBanner(true);
+                          const url = await uploadImage(file);
+                          if (url) setNewProfile(p => ({ ...p, bannerUrl: url }));
+                          setUploadingBanner(false);
+                        }} />
+                        <span className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                          {uploadingBanner ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          {uploadingBanner ? 'Enviando...' : 'Escolher Banner'}
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Convertida para WebP automaticamente</p>
                   </div>
                 </div>
                 <div className="flex gap-3 mt-4">
@@ -259,6 +327,10 @@ export default function CreatorDashboard() {
                         <Button variant="outline" className="flex-1 text-sm" onClick={() => window.open(`/${profile.username}`, "_blank")}>
                           <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver Página
                         </Button>
+                        <Button variant="ghost" size="icon" className="text-orange-500 hover:text-orange-600 hover:bg-orange-50"
+                          onClick={() => setEditingProfile({ ...profile })}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50"
                           onClick={() => handleDeleteProfile(profile.id)}>
                           <Trash2 className="w-4 h-4" />
@@ -268,6 +340,82 @@ export default function CreatorDashboard() {
                   </Card>
                 ))}
               </div>
+            )}
+
+            {/* Edit Profile Modal */}
+            {editingProfile && (
+              <Card className="p-6 bg-white border-0 shadow-lg mt-6">
+                <h3 className="font-bold text-lg mb-4">Editar Perfil: @{editingProfile.username}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome de Exibição *</label>
+                    <input className="w-full px-3 py-2 border rounded-lg" value={editingProfile.displayName}
+                      onChange={e => setEditingProfile({ ...editingProfile, displayName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Username</label>
+                    <input className="w-full px-3 py-2 border rounded-lg bg-gray-50" value={editingProfile.username} disabled />
+                    <p className="text-xs text-gray-400 mt-1">Username não pode ser alterado</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">Bio</label>
+                    <textarea className="w-full px-3 py-2 border rounded-lg" rows={3}
+                      value={editingProfile.bio || ''} onChange={e => setEditingProfile({ ...editingProfile, bio: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Foto de Perfil</label>
+                    <div className="flex items-center gap-3">
+                      {editingProfile.profilePicUrl ? (
+                        <img src={editingProfile.profilePicUrl} alt="" className="w-16 h-16 rounded-full object-cover border" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center border"><ImagePlus className="w-6 h-6 text-gray-400" /></div>
+                      )}
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          setUploadingPic(true);
+                          const url = await uploadImage(file);
+                          if (url) setEditingProfile(p => p ? { ...p, profilePicUrl: url } : p);
+                          setUploadingPic(false);
+                        }} />
+                        <span className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                          {uploadingPic ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          {uploadingPic ? 'Enviando...' : 'Trocar Foto'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Banner / Capa</label>
+                    <div className="flex items-center gap-3">
+                      {editingProfile.bannerUrl ? (
+                        <img src={editingProfile.bannerUrl} alt="" className="w-32 h-16 rounded-lg object-cover border" />
+                      ) : (
+                        <div className="w-32 h-16 rounded-lg bg-gray-100 flex items-center justify-center border"><ImagePlus className="w-6 h-6 text-gray-400" /></div>
+                      )}
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          setUploadingBanner(true);
+                          const url = await uploadImage(file);
+                          if (url) setEditingProfile(p => p ? { ...p, bannerUrl: url } : p);
+                          setUploadingBanner(false);
+                        }} />
+                        <span className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                          {uploadingBanner ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          {uploadingBanner ? 'Enviando...' : 'Trocar Banner'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleUpdateProfile} disabled={saving}>
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar Alterações
+                  </Button>
+                  <Button variant="outline" onClick={() => setEditingProfile(null)}>Cancelar</Button>
+                </div>
+              </Card>
             )}
           </TabsContent>
 
