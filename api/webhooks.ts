@@ -1,67 +1,34 @@
 /**
  * Vercel Serverless API — Webhook handler
- * Handles POST /api/webhooks?gateway=<name>
+ * Runs as Node.js serverless function (not Edge).
  */
-import "dotenv/config";
-import { updateTransactionStatus } from "../server/db";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export default async function handler(req: Request): Promise<Response> {
-    if (req.method === "OPTIONS") {
-        return new Response(null, {
-            status: 204,
-            headers: {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        });
-    }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-    if (req.method !== "POST") {
-        return new Response(JSON.stringify({ error: "Method not allowed" }), {
-            status: 405,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
+    if (req.method === "OPTIONS") return res.status(204).end();
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
     try {
-        const url = new URL(req.url);
-        const gateway = url.searchParams.get("gateway") || url.pathname.split("/").pop() || "unknown";
-        const body = await req.json();
+        const gateway = (req.query.gateway as string) || "unknown";
+        const body = req.body;
 
         console.log(`[Webhook] Received ${gateway} webhook:`, JSON.stringify(body).slice(0, 500));
 
-        // Extract transaction info based on gateway format
-        const txId = body.transaction_id || body.id || body.transactionId;
-        const status = body.status || body.payment_status;
+        const txId = body?.transaction_id || body?.id || body?.transactionId;
+        const status = body?.status || body?.payment_status;
 
         if (txId && status) {
-            const normalizedStatus =
-                status === "paid" || status === "completed" || status === "approved"
-                    ? "completed"
-                    : status === "expired"
-                        ? "expired"
-                        : status === "refunded"
-                            ? "refunded"
-                            : "pending";
-
-            // TODO: look up internal transaction ID by external ID, then update
-            console.log(`[Webhook] Transaction ${txId} status: ${normalizedStatus}`);
+            console.log(`[Webhook] Transaction ${txId} status: ${status}`);
+            // TODO: Update transaction in Supabase
         }
 
-        return new Response(JSON.stringify({ received: true }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-        });
+        return res.status(200).json({ received: true });
     } catch (err: any) {
         console.error("[Webhook] Error:", err);
-        return new Response(JSON.stringify({ error: "Internal error" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
+        return res.status(500).json({ error: "Internal error" });
     }
 }
-
-export const config = {
-    runtime: "edge",
-};
