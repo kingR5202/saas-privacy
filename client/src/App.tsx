@@ -13,12 +13,11 @@ function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/admin"} component={AdminPanel} />
-      <Route path={"/dashboard"} component={CreatorDashboard} />
-      <Route path={"/:username"} component={PublicProfile} />
-      <Route path={"\\"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route path="/" component={Home} />
+      <Route path="/admin" component={AdminPanel} />
+      <Route path="/dashboard" component={CreatorDashboard} />
+      <Route path="/404" component={NotFound} />
+      <Route path="/:username" component={PublicProfile} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -34,7 +33,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider
         defaultTheme="light"
-        // switchable
+      // switchable
       >
         <TooltipProvider>
           <Toaster />
