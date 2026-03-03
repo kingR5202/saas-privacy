@@ -8,9 +8,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 
 interface Profile {
-  id: number; userId: number; username: string; displayName: string; bio: string | null;
-  profilePicUrl: string | null; bannerUrl: string | null; isActive: boolean;
-  totalSubscribers: number; totalPosts: number;
+  id: number; userId: string; username: string; displayName: string; bio: string | null;
+  profilePicUrl: string | null; bannerUrl: string | null; isActive: boolean; theme: string;
+  totalSubscribers: number; totalPosts: number; totalMedia: number; totalExclusive: number; totalLikes: number;
+}
+
+interface Post {
+  id: number; profileId: number; imageUrl: string | null; videoUrl: string | null;
+  caption: string | null; isLocked: boolean; createdAt: string;
 }
 
 interface GatewayConfig {
@@ -32,6 +37,13 @@ export default function CreatorDashboard() {
   const { user, loading: authLoading, signOut } = useSupabaseAuth();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("profiles");
+
+  // Posts state
+  const [profilePosts, setProfilePosts] = useState<Post[]>([]);
+  const [showCreatePost, setShowCreatePost] = useState(false);
+  const [newPostCaption, setNewPostCaption] = useState("");
+  const [newPostImage, setNewPostImage] = useState("");
+  const [uploadingPostImg, setUploadingPostImg] = useState(false);
 
   // Profile state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -133,10 +145,45 @@ export default function CreatorDashboard() {
       bio: editingProfile.bio,
       profilePicUrl: editingProfile.profilePicUrl,
       bannerUrl: editingProfile.bannerUrl,
+      theme: editingProfile.theme || 'dark',
+      totalPosts: editingProfile.totalPosts || 0,
+      totalMedia: editingProfile.totalMedia || 0,
+      totalExclusive: editingProfile.totalExclusive || 0,
+      totalLikes: editingProfile.totalLikes || 0,
     }).eq("id", editingProfile.id);
     if (error) alert("Erro: " + error.message);
     else { setEditingProfile(null); loadProfiles(); }
     setSaving(false);
+  };
+
+  // Load posts for a profile
+  const loadProfilePosts = async (profileId: number) => {
+    const { data } = await supabase.from("posts").select("*").eq("profileId", profileId).order("createdAt", { ascending: false });
+    setProfilePosts((data || []) as Post[]);
+  };
+
+  // Create post
+  const handleCreatePost = async () => {
+    if (!selectedProfileId) return;
+    setSaving(true);
+    await supabase.from("posts").insert({
+      profileId: selectedProfileId,
+      imageUrl: newPostImage || null,
+      caption: newPostCaption || null,
+      isLocked: true,
+    });
+    setShowCreatePost(false);
+    setNewPostCaption("");
+    setNewPostImage("");
+    loadProfilePosts(selectedProfileId);
+    setSaving(false);
+  };
+
+  // Delete post
+  const handleDeletePost = async (postId: number) => {
+    if (!selectedProfileId) return;
+    await supabase.from("posts").delete().eq("id", postId);
+    loadProfilePosts(selectedProfileId);
   };
 
   // Save gateway config
@@ -195,10 +242,11 @@ export default function CreatorDashboard() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8">
+          <TabsList className="grid w-full grid-cols-4 mb-8">
             <TabsTrigger value="profiles">Meus Perfis</TabsTrigger>
-            <TabsTrigger value="gateway">Gateway de Pagamento</TabsTrigger>
-            <TabsTrigger value="plans">Planos de Assinatura</TabsTrigger>
+            <TabsTrigger value="gateway">Gateway</TabsTrigger>
+            <TabsTrigger value="plans">Planos</TabsTrigger>
+            <TabsTrigger value="posts">Postagens</TabsTrigger>
           </TabsList>
 
           {/* ============ PROFILES TAB ============ */}
@@ -362,6 +410,45 @@ export default function CreatorDashboard() {
                     <textarea className="w-full px-3 py-2 border rounded-lg" rows={3}
                       value={editingProfile.bio || ''} onChange={e => setEditingProfile({ ...editingProfile, bio: e.target.value })} />
                   </div>
+
+                  {/* Theme Toggle */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Tema da Página</label>
+                    <div className="flex gap-3">
+                      <button className={`flex-1 p-3 rounded-xl border-2 text-center font-medium transition ${editingProfile.theme === 'dark' ? 'border-orange-500 bg-gray-900 text-white' : 'border-gray-200'}`}
+                        onClick={() => setEditingProfile({ ...editingProfile, theme: 'dark' })}>⬛ Escuro</button>
+                      <button className={`flex-1 p-3 rounded-xl border-2 text-center font-medium transition ${editingProfile.theme === 'light' ? 'border-orange-500 bg-white text-gray-900' : 'border-gray-200'}`}
+                        onClick={() => setEditingProfile({ ...editingProfile, theme: 'light' })}>⬜ Claro</button>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Estatísticas do Perfil</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">📷 Postagens</label>
+                        <input type="number" className="w-full px-3 py-2 border rounded-lg" value={editingProfile.totalPosts || 0}
+                          onChange={e => setEditingProfile({ ...editingProfile, totalPosts: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">🎥 Mídias</label>
+                        <input type="number" className="w-full px-3 py-2 border rounded-lg" value={editingProfile.totalMedia || 0}
+                          onChange={e => setEditingProfile({ ...editingProfile, totalMedia: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">🔒 Privado</label>
+                        <input type="number" className="w-full px-3 py-2 border rounded-lg" value={editingProfile.totalExclusive || 0}
+                          onChange={e => setEditingProfile({ ...editingProfile, totalExclusive: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">❤️ Curtidas</label>
+                        <input type="number" className="w-full px-3 py-2 border rounded-lg" value={editingProfile.totalLikes || 0}
+                          onChange={e => setEditingProfile({ ...editingProfile, totalLikes: parseInt(e.target.value) || 0 })} />
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Foto de Perfil</label>
                     <div className="flex items-center gap-3">
@@ -596,6 +683,97 @@ export default function CreatorDashboard() {
                     </div>
                   </>
                 )}
+              </>
+            )}
+          </TabsContent>
+
+          {/* ============ POSTS TAB ============ */}
+          <TabsContent value="posts" className="space-y-6">
+            <h2 className="text-2xl font-bold">Gerenciar Postagens</h2>
+            <p className="text-gray-600">Selecione um perfil e adicione postagens que aparecerão na página pública.</p>
+
+            {/* Profile selector */}
+            <div className="flex gap-3 flex-wrap">
+              {profiles.map(p => (
+                <button key={p.id} onClick={() => { setSelectedProfileId(p.id); loadProfilePosts(p.id); }}
+                  className={`px-4 py-2 rounded-xl border font-medium transition ${selectedProfileId === p.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-200 hover:border-orange-300'}`}>
+                  @{p.username}
+                </button>
+              ))}
+            </div>
+
+            {selectedProfileId && (
+              <>
+                <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={() => setShowCreatePost(true)}>
+                  <Plus className="w-4 h-4" /> Nova Postagem
+                </Button>
+
+                {showCreatePost && (
+                  <Card className="p-6 bg-white border-0 shadow-lg">
+                    <h3 className="font-bold text-lg mb-4">Nova Postagem</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Legenda</label>
+                        <textarea className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Descrição da postagem..."
+                          value={newPostCaption} onChange={e => setNewPostCaption(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Imagem da Postagem</label>
+                        <div className="flex items-center gap-3">
+                          {newPostImage ? (
+                            <img src={newPostImage} alt="" className="w-24 h-24 rounded-lg object-cover border" />
+                          ) : (
+                            <div className="w-24 h-24 rounded-lg bg-gray-100 flex items-center justify-center border"><ImagePlus className="w-8 h-8 text-gray-400" /></div>
+                          )}
+                          <label className="cursor-pointer">
+                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return;
+                              setUploadingPostImg(true);
+                              const url = await uploadImage(file);
+                              if (url) setNewPostImage(url);
+                              setUploadingPostImg(false);
+                            }} />
+                            <span className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                              {uploadingPostImg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                              {uploadingPostImg ? 'Enviando...' : 'Escolher Imagem'}
+                            </span>
+                          </label>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Convertida para WebP automaticamente</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleCreatePost} disabled={saving}>
+                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Publicar
+                        </Button>
+                        <Button variant="outline" onClick={() => { setShowCreatePost(false); setNewPostCaption(""); setNewPostImage(""); }}>Cancelar</Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Posts list */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {profilePosts.length === 0 ? (
+                    <p className="text-gray-500 text-center py-6 col-span-full">Nenhuma postagem criada ainda.</p>
+                  ) : profilePosts.map(post => (
+                    <Card key={post.id} className="overflow-hidden bg-white border-0 shadow-md">
+                      {post.imageUrl ? (
+                        <img src={post.imageUrl} alt="" className="w-full h-40 object-cover" />
+                      ) : (
+                        <div className="w-full h-40 bg-gray-100 flex items-center justify-center"><ImagePlus className="w-8 h-8 text-gray-300" /></div>
+                      )}
+                      <div className="p-3">
+                        <p className="text-sm line-clamp-2 mb-2">{post.caption || 'Sem legenda'}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">{new Date(post.createdAt).toLocaleDateString('pt-BR')}</span>
+                          <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={() => handleDeletePost(post.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
               </>
             )}
           </TabsContent>
