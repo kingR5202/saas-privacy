@@ -60,7 +60,7 @@ export default function AuthPage() {
                 <Card className="p-8 bg-white/90 backdrop-blur-sm shadow-xl border-0">
                     {/* Logo */}
                     <div className="text-center mb-8">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 mx-auto mb-3" />
+                        <img src="/logo.png" alt="Privacy" className="w-14 h-14 rounded-full mx-auto mb-3" />
                         <h1 className="text-2xl font-bold">Privacy</h1>
                         <p className="text-gray-600 text-sm mt-1">
                             {mode === "login" ? "Entre na sua conta" : "Crie sua conta grátis"}
