@@ -58,9 +58,14 @@ export default function PublicProfile() {
         body: JSON.stringify({ profileId: profile.id, userId: profile.userId, amount: plan.priceInCents }),
       });
       const result = await resp.json();
+      console.log('Payment response:', result);
       if (!resp.ok) throw new Error(result.error || "Erro ao gerar PIX");
-      setPixCode(result.qr_code || result.pixCopyPaste || result.brcode || "");
-      setPixQrBase64(result.qr_code_base64 || "");
+      const code = result.qr_code || result.pixCopyPaste || result.brcode || result.pix_code || "";
+      if (!code) throw new Error("PIX code vazio. Verifique a configuração do gateway.");
+      setPixCode(code);
+      // Generate QR from code if no base64 provided
+      const qrImg = result.qr_code_base64 || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(code)}`;
+      setPixQrBase64(qrImg);
       setPaymentStatus("Aguardando pagamento...");
       if (result.id) {
         const interval = setInterval(async () => {
@@ -393,12 +398,13 @@ export default function PublicProfile() {
                   </div>
                   {pixCode && (
                     <>
-                      <input readOnly value={pixCode} style={{ width: "100%", padding: "10px", background: "#f5f5f5", border: "1px solid #ddd", borderRadius: 8, fontSize: 11, fontFamily: "monospace", textAlign: "center", marginBottom: 12 }} />
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={() => setShowQr(!showQr)} style={{ flex: 1, padding: 12, background: "#eee", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{showQr ? "Ocultar QR" : "Ver QR Code"}</button>
-                        <button onClick={() => navigator.clipboard.writeText(pixCode)} style={{ flex: 1, padding: 12, background: "linear-gradient(90deg, #F69449, #F7A899)", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 14, color: "#4F2E1B", cursor: "pointer" }}>Copiar Chave</button>
+                      <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
+                        <img src={pixQrBase64} alt="QR Code PIX" style={{ width: 192, height: 192, borderRadius: 8, border: "1px solid #eee" }} />
                       </div>
-                      {showQr && pixQrBase64 && <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}><img src={pixQrBase64} alt="QR" style={{ width: 192, height: 192, borderRadius: 8 }} /></div>}
+                      <input readOnly value={pixCode} style={{ width: "100%", padding: "10px", background: "#f5f5f5", border: "1px solid #ddd", borderRadius: 8, fontSize: 11, fontFamily: "monospace", textAlign: "center", marginBottom: 12 }} onClick={e => (e.target as HTMLInputElement).select()} />
+                      <button onClick={() => { navigator.clipboard.writeText(pixCode); setPaymentStatus("Chave PIX copiada! ✅ Cole no app do seu banco."); }} style={{ width: "100%", padding: 14, background: "linear-gradient(90deg, #F69449, #F7A899)", borderRadius: 10, border: "none", fontWeight: 700, fontSize: 15, color: "#4F2E1B", cursor: "pointer", marginBottom: 8 }}>
+                        📋 Copiar Chave PIX
+                      </button>
                     </>
                   )}
                   {paymentStatus && <p style={{ fontSize: 14, marginTop: 16, fontWeight: 700, color: "#e67a3d" }}>{paymentStatus}</p>}
