@@ -167,6 +167,18 @@ export default function PublicProfile() {
             <i className="fas fa-comment-dots" style={{ fontSize: "0.85em" }} /> Chat
           </button>
         </div>
+        {/* ===== IA HOT BUTTON ===== */}
+        <div style={{ padding: "0 20px 18px" }}>
+          <a href="https://bot-x.org/hottok?r=6846046252" target="_blank" rel="noopener noreferrer" style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            width: "100%", padding: "14px", borderRadius: 12, border: "none",
+            background: "linear-gradient(135deg, #ff4d6d, #ff758f, #ff4d6d)", color: "#fff",
+            fontWeight: 700, fontSize: "0.95em", cursor: "pointer", textDecoration: "none",
+            boxShadow: "0 4px 15px rgba(255, 77, 109, 0.35)",
+          }}>
+            <i className="fas fa-fire" style={{ fontSize: "1.1em" }} /> Gere suas fotos ficante com essa IA 🔥
+          </a>
+        </div>
 
         {/* ===== SUBSCRIPTION PLANS ===== */}
         {plans.length > 0 && (
@@ -219,12 +231,12 @@ export default function PublicProfile() {
                     ) : (
                       <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#e67a3d" }} />
                     )}
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontWeight: 700, fontSize: "0.92em" }}>
-                        {profile.displayName}{" "}
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: "middle" }}><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
-                      </span>
-                      <br /><span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
+                    <div style={{ flex: 1, lineHeight: 1.3 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.92em" }}>{profile.displayName}</span>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
+                      </div>
+                      <span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <span style={{ color: subText, fontSize: "0.78em" }}>{new Date(post.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}</span>
@@ -282,11 +294,12 @@ export default function PublicProfile() {
                     ) : (
                       <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#e67a3d" }} />
                     )}
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: "0.92em" }}>{profile.displayName}{" "}
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: "middle" }}><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
-                      </span>
-                      <br /><span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
+                    <div style={{ lineHeight: 1.3 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.92em" }}>{profile.displayName}</span>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
+                      </div>
+                      <span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
                     </div>
                   </div>
                   <div style={{ background: lockedBg, padding: 60, textAlign: "center" }}>

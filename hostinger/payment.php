@@ -43,6 +43,36 @@ function supabaseGet($table, $filters) {
     return $decoded;
 }
 
+function supabasePost($table, $data) {
+    global $SUPABASE_URL, $SUPABASE_KEY;
+    $url = "$SUPABASE_URL/rest/v1/$table";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => [
+            "apikey: $SUPABASE_KEY",
+            "Authorization: Bearer $SUPABASE_KEY",
+            'Content-Type: application/json',
+            'Prefer: return=minimal',
+        ],
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+function logTransaction($userId, $profileId, $gateway, $amount, $status, $externalId = null) {
+    supabasePost('transactions', [
+        'user_id' => $userId,
+        'profile_id' => $profileId,
+        'gateway' => $gateway,
+        'amount' => $amount,
+        'status' => $status,
+        'external_id' => $externalId,
+    ]);
+}
+
 function generateCPF() {
     $n = [];
     for ($i = 0; $i < 9; $i++) $n[] = rand(0, 9);
@@ -110,8 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'Content-Type: application/json', 'Accept: application/json', "Authorization: Bearer $token"
             ], json_encode(['value' => $amount]));
             $data = $result['body'];
+            $txId = $data['id'] ?? null;
+            logTransaction($userId, $profileId, 'pushinpay', $amount, 'pending', $txId);
             echo json_encode([
-                'id' => $data['id'] ?? null,
+                'id' => $txId,
                 'qr_code' => $data['qr_code'] ?? $data['pix_code'] ?? '',
                 'qr_code_base64' => $data['qr_code_base64'] ?? '',
                 'status' => 'PENDING', 'amount' => $amount,
@@ -132,8 +164,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]));
             $data = $result['body'];
             $qr = $data['pix']['qrcode'] ?? $data['qrcode'] ?? $data['qr_code'] ?? '';
+            $txId = $data['id'] ?? null;
+            logTransaction($userId, $profileId, 'blackout', $amount, 'pending', $txId);
             echo json_encode([
-                'id' => $data['id'] ?? null,
+                'id' => $txId,
                 'qr_code' => $qr,
                 'status' => 'PENDING', 'amount' => $amount,
                 'redirect_url' => $redirectUrl
@@ -154,7 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ], json_encode(['amount' => $amount / 100, 'external_id' => $extId, 'payer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
             $data = $result['body'];
             $qr = $data['pix']['qrcode'] ?? $data['qrCodeResponse']['qrcode'] ?? $data['qrcode'] ?? $data['qr_code'] ?? '';
-            echo json_encode(['id' => $data['id'] ?? $extId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
+            $txId = $data['id'] ?? $extId;
+            logTransaction($userId, $profileId, 'novaplex', $amount, 'pending', $txId);
+            echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
     }
 }
 
