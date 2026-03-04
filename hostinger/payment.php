@@ -198,6 +198,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $txId = $data['id'] ?? $extId;
             logTransaction($userId, $profileId, 'novaplex', $amount, 'pending', $txId);
             echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
+
+        case 'vizzionpay':
+            $pubKey = $gw['vizzionpay_public_key'] ?? '';
+            $secKey = $gw['vizzionpay_secret_key'] ?? '';
+            if (!$pubKey || !$secKey) { echo json_encode(['error' => 'Chaves VizzionPay não configuradas']); http_response_code(400); exit; }
+            $extId = 'vz-' . time() . '-' . rand(100, 999);
+            $result = apiCall('https://app.vizzionpay.com/api/v1/gateway/pix/receive', 'POST', [
+                'Content-Type: application/json', "x-public-key: $pubKey", "x-secret-key: $secKey"
+            ], json_encode(['identifier' => $extId, 'amount' => $amount / 100, 'client' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
+            $data = $result['body'];
+            $qr = $data['pix']['code'] ?? $data['qrcode'] ?? '';
+            $txId = $data['transactionId'] ?? $extId;
+            logTransaction($userId, $profileId, 'vizzionpay', $amount, 'pending', $txId);
+            echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
+
+        case 'alphacash':
+            $pubKey = $gw['alphacash_public_key'] ?? '';
+            $secKey = $gw['alphacash_secret_key'] ?? '';
+            if (!$pubKey || !$secKey) { echo json_encode(['error' => 'Chaves AlphaCash não configuradas']); http_response_code(400); exit; }
+            $auth = 'Basic ' . base64_encode("$pubKey:$secKey");
+            $extId = 'ac-' . time() . '-' . rand(100,999);
+            $result = apiCall('https://api.alphacashpay.com.br/v1/transactions', 'POST', [
+                'Content-Type: application/json', "Authorization: $auth"
+            ], json_encode(['amount' => $amount, 'paymentMethod' => 'pix', 'customer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'phone' => '5500000000000', 'document' => ['number' => generateCPF(), 'type' => 'cpf']], 'items' => [['title' => 'Assinatura', 'unitPrice' => $amount, 'quantity' => 1, 'tangible' => false]]]));
+            $data = $result['body'];
+            $qr = $data['pix']['qrcode'] ?? $data['qrcode'] ?? '';
+            $txId = $data['id'] ?? $extId;
+            logTransaction($userId, $profileId, 'alphacash', $amount, 'pending', $txId);
+            echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
+
+        case 'buckpay':
+            $bpToken = $gw['buckpay_token'] ?? '';
+            $bpAgent = $gw['buckpay_user_agent'] ?? 'BuckPayClient/1.0';
+            if (!$bpToken) { echo json_encode(['error' => 'Token BuckPay não configurado']); http_response_code(400); exit; }
+            $extId = 'bp-' . time() . '-' . rand(100, 999);
+            $result = apiCall('https://api.realtechdev.com.br/v1/transactions', 'POST', [
+                'Content-Type: application/json', "Authorization: Bearer $bpToken", "User-Agent: $bpAgent"
+            ], json_encode(['external_id' => $extId, 'payment_method' => 'pix', 'amount' => $amount, 'buyer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
+            $data = $result['body'];
+            $pixData = $data['data']['pix'] ?? $data['pix'] ?? [];
+            $qr = $pixData['code'] ?? $pixData['qrcode'] ?? '';
+            $txId = $data['data']['id'] ?? $extId;
+            logTransaction($userId, $profileId, 'buckpay', $amount, 'pending', $txId);
+            echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
     }
 }
 
@@ -227,6 +271,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
                 "Authorization: Bearer $token", 'Accept: application/json'
             ]);
             $st = strtolower($result['body']['status'] ?? 'pending');
+            $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
+            echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
+
+        case 'vizzionpay':
+            // VizzionPay - check via same headers
+            $pubKey = $gw['vizzionpay_public_key'] ?? '';
+            $secKey = $gw['vizzionpay_secret_key'] ?? '';
+            $result = apiCall("https://app.vizzionpay.com/api/v1/gateway/transactions/" . urlencode($id), 'GET', [
+                "x-public-key: $pubKey", "x-secret-key: $secKey", 'Accept: application/json'
+            ]);
+            $st = strtolower($result['body']['status'] ?? 'pending');
+            $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
+            echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
+
+        case 'alphacash':
+            $auth = 'Basic ' . base64_encode(($gw['alphacash_public_key'] ?? '') . ':' . ($gw['alphacash_secret_key'] ?? ''));
+            $result = apiCall("https://api.alphacashpay.com.br/v1/transactions/" . urlencode($id), 'GET', [
+                "Authorization: $auth", 'Accept: application/json'
+            ]);
+            $st = strtolower($result['body']['status'] ?? $result['body']['data']['status'] ?? 'pending');
+            $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
+            echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
+
+        case 'buckpay':
+            $bpToken = $gw['buckpay_token'] ?? '';
+            $bpAgent = $gw['buckpay_user_agent'] ?? 'BuckPayClient/1.0';
+            $result = apiCall("https://api.realtechdev.com.br/v1/transactions/external_id/" . urlencode($id), 'GET', [
+                "Authorization: Bearer $bpToken", "User-Agent: $bpAgent", 'Accept: application/json'
+            ]);
+            $st = strtolower($result['body']['data']['status'] ?? $result['body']['status'] ?? 'pending');
             $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
             echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
     }

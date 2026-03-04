@@ -12,6 +12,8 @@ interface Profile {
   profilePicUrl: string | null; bannerUrl: string | null; isActive: boolean; theme: string;
   totalSubscribers: number; totalPosts: number; totalMedia: number; totalExclusive: number; totalLikes: number;
   redirect_url: string | null;
+  instagram_url: string | null; twitter_url: string | null; tiktok_url: string | null;
+  onlyfans_url: string | null; telegram_url: string | null;
 }
 
 interface Post {
@@ -26,6 +28,12 @@ interface GatewayConfig {
   blackout_secret_key?: string;
   novaplex_client_id?: string;
   novaplex_client_secret?: string;
+  vizzionpay_public_key?: string;
+  vizzionpay_secret_key?: string;
+  alphacash_public_key?: string;
+  alphacash_secret_key?: string;
+  buckpay_token?: string;
+  buckpay_user_agent?: string;
   redirect_url?: string;
 }
 
@@ -158,6 +166,11 @@ export default function CreatorDashboard() {
       totalExclusive: editingProfile.totalExclusive || 0,
       totalLikes: editingProfile.totalLikes || 0,
       redirect_url: editingProfile.redirect_url || null,
+      instagram_url: editingProfile.instagram_url || null,
+      twitter_url: editingProfile.twitter_url || null,
+      tiktok_url: editingProfile.tiktok_url || null,
+      onlyfans_url: editingProfile.onlyfans_url || null,
+      telegram_url: editingProfile.telegram_url || null,
     }).eq("id", editingProfile.id);
     if (error) alert("Erro: " + error.message);
     else { setEditingProfile(null); loadProfiles(); }
@@ -500,6 +513,34 @@ export default function CreatorDashboard() {
                     <p className="text-xs text-gray-500 mt-1">O cliente será redirecionado para este link após confirmar o pagamento PIX deste perfil.</p>
                   </div>
 
+                  {/* Social Media Links */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2">🌐 Redes Sociais</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">📷</span>
+                        <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Link do Instagram..."
+                          value={editingProfile.instagram_url || ""} onChange={e => setEditingProfile({ ...editingProfile, instagram_url: e.target.value })} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🐦</span>
+                        <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Link do Twitter/X..."
+                          value={editingProfile.twitter_url || ""} onChange={e => setEditingProfile({ ...editingProfile, twitter_url: e.target.value })} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🎵</span>
+                        <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Link do TikTok..."
+                          value={editingProfile.tiktok_url || ""} onChange={e => setEditingProfile({ ...editingProfile, tiktok_url: e.target.value })} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">✈️</span>
+                        <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Link do Telegram..."
+                          value={editingProfile.telegram_url || ""} onChange={e => setEditingProfile({ ...editingProfile, telegram_url: e.target.value })} />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Ícones clicáveis aparecerão na página pública do perfil.</p>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Foto de Perfil</label>
                     <div className="flex items-center gap-3">
@@ -688,6 +729,9 @@ export default function CreatorDashboard() {
                   <option value="pushinpay">PushinPay</option>
                   <option value="blackout">Blackout (BlackPayments)</option>
                   <option value="novaplex">NovaPlex</option>
+                  <option value="vizzionpay">VizzionPay</option>
+                  <option value="alphacash">AlphaCash</option>
+                  <option value="buckpay">BuckPay</option>
                 </select>
               </div>
 
@@ -737,6 +781,59 @@ export default function CreatorDashboard() {
                   </div>
                 </div>
               )}
+
+              {/* VizzionPay Fields */}
+              {gatewayConfig.gateway === "vizzionpay" && (
+                <div className="space-y-4 border-t pt-4">
+                  <h3 className="font-bold text-emerald-600">VizzionPay</h3>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Public Key</label>
+                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Public Key..."
+                      value={gatewayConfig.vizzionpay_public_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, vizzionpay_public_key: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Secret Key</label>
+                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
+                      value={gatewayConfig.vizzionpay_secret_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, vizzionpay_secret_key: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              {/* AlphaCash Fields */}
+              {gatewayConfig.gateway === "alphacash" && (
+                <div className="space-y-4 border-t pt-4">
+                  <h3 className="font-bold text-red-600">AlphaCash</h3>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Public Key (Chave Pública)</label>
+                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Public Key..."
+                      value={gatewayConfig.alphacash_public_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, alphacash_public_key: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Secret Key (Chave Secreta)</label>
+                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
+                      value={gatewayConfig.alphacash_secret_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, alphacash_secret_key: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              {/* BuckPay Fields */}
+              {gatewayConfig.gateway === "buckpay" && (
+                <div className="space-y-4 border-t pt-4">
+                  <h3 className="font-bold text-yellow-600">BuckPay</h3>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">API Token</label>
+                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu token BuckPay (40 caracteres)..."
+                      value={gatewayConfig.buckpay_token || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, buckpay_token: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">User-Agent</label>
+                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Valor fornecido pelo gerente de contas..."
+                      value={gatewayConfig.buckpay_user_agent || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, buckpay_user_agent: e.target.value })} />
+                    <p className="text-xs text-gray-500 mt-1">Solicite ao seu gerente de contas BuckPay</p>
+                  </div>
+                </div>
+              )}
+
 
               {/* Redirect URL */}
               <div className="mt-4 border-t pt-4">

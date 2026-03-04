@@ -7,6 +7,8 @@ interface Profile {
   id: number; userId: string; username: string; displayName: string; bio: string | null;
   profilePicUrl: string | null; bannerUrl: string | null; theme: string;
   totalSubscribers: number; totalPosts: number; totalMedia: number; totalExclusive: number; totalLikes: number;
+  instagram_url: string | null; twitter_url: string | null; tiktok_url: string | null;
+  onlyfans_url: string | null; telegram_url: string | null;
 }
 interface Plan { id: number; name: string; description: string | null; priceInCents: number; billingCycle: string; }
 interface Post { id: number; profileId: number; imageUrl: string | null; videoUrl: string | null; caption: string | null; isLocked: boolean; createdAt: string; }
@@ -29,6 +31,8 @@ export default function PublicProfile() {
   const [paymentStatus, setPaymentStatus] = useState("");
   const [showQr, setShowQr] = useState(false);
   const [expandedBio, setExpandedBio] = useState(false);
+  const [mimoActive, setMimoActive] = useState(false);
+  const [chatActive, setChatActive] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!username) return;
@@ -152,19 +156,41 @@ export default function PublicProfile() {
             </p>
           )}
           <div style={{ display: "flex", gap: 12, marginTop: 10, marginBottom: 8 }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-              <i className="fab fa-instagram" style={{ fontSize: "0.95em", color: subText }} />
-            </div>
+            {profile.instagram_url && (
+              <a href={profile.instagram_url} target="_blank" rel="noopener noreferrer" style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", textDecoration: "none", transition: "transform 0.2s" }} onMouseOver={e => (e.currentTarget.style.transform = "scale(1.15)")} onMouseOut={e => (e.currentTarget.style.transform = "scale(1)")}>
+                <i className="fab fa-instagram" style={{ fontSize: "0.95em", color: subText }} />
+              </a>
+            )}
+            {profile.twitter_url && (
+              <a href={profile.twitter_url} target="_blank" rel="noopener noreferrer" style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", textDecoration: "none", transition: "transform 0.2s" }} onMouseOver={e => (e.currentTarget.style.transform = "scale(1.15)")} onMouseOut={e => (e.currentTarget.style.transform = "scale(1)")}>
+                <i className="fab fa-twitter" style={{ fontSize: "0.95em", color: subText }} />
+              </a>
+            )}
+            {profile.tiktok_url && (
+              <a href={profile.tiktok_url} target="_blank" rel="noopener noreferrer" style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", textDecoration: "none", transition: "transform 0.2s" }} onMouseOver={e => (e.currentTarget.style.transform = "scale(1.15)")} onMouseOut={e => (e.currentTarget.style.transform = "scale(1)")}>
+                <i className="fab fa-tiktok" style={{ fontSize: "0.95em", color: subText }} />
+              </a>
+            )}
+            {profile.telegram_url && (
+              <a href={profile.telegram_url} target="_blank" rel="noopener noreferrer" style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", textDecoration: "none", transition: "transform 0.2s" }} onMouseOver={e => (e.currentTarget.style.transform = "scale(1.15)")} onMouseOut={e => (e.currentTarget.style.transform = "scale(1)")}>
+                <i className="fab fa-telegram-plane" style={{ fontSize: "0.95em", color: subText }} />
+              </a>
+            )}
+            {!profile.instagram_url && !profile.twitter_url && !profile.tiktok_url && !profile.telegram_url && (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <i className="fab fa-instagram" style={{ fontSize: "0.95em", color: subText }} />
+              </div>
+            )}
           </div>
         </div>
 
         {/* ===== MIMO / CHAT BUTTONS ===== */}
-        <div style={{ padding: "8px 20px 18px", display: "flex", gap: 10 }}>
-          <button style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <i className="fas fa-dollar-sign" style={{ fontSize: "0.85em" }} /> Mimo
+        <div style={{ padding: "8px 20px 18px", display: "flex", gap: 10, position: "relative" }}>
+          <button onClick={() => { setMimoActive(true); setTimeout(() => setMimoActive(false), 2000); }} style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${mimoActive ? '#e67a3d' : borderColor}`, background: mimoActive ? 'rgba(230,122,61,0.1)' : 'transparent', color: mimoActive ? '#e67a3d' : textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: 'all 0.3s' }}>
+            <i className="fas fa-dollar-sign" style={{ fontSize: "0.85em" }} /> {mimoActive ? 'Enviado! ❤️' : 'Mimo'}
           </button>
-          <button style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <i className="fas fa-comment-dots" style={{ fontSize: "0.85em" }} /> Chat
+          <button onClick={() => { setChatActive(true); setTimeout(() => setChatActive(false), 2000); }} style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${chatActive ? '#e67a3d' : borderColor}`, background: chatActive ? 'rgba(230,122,61,0.1)' : 'transparent', color: chatActive ? '#e67a3d' : textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: 'all 0.3s' }}>
+            <i className="fas fa-comment-dots" style={{ fontSize: "0.85em" }} /> {chatActive ? 'Em breve! 💬' : 'Chat'}
           </button>
         </div>
 
@@ -172,15 +198,19 @@ export default function PublicProfile() {
         {plans.length > 0 && (
           <div style={{ padding: "0 20px 20px" }}>
             <h2 style={{ fontSize: "0.95em", fontWeight: 700, color: subText, marginBottom: 10 }}>Assinaturas</h2>
-            {plans.map(plan => (
+            {plans.map((plan, idx) => (
               <button key={plan.id} onClick={() => handlePlanClick(plan)} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
                 padding: "16px 20px", marginBottom: 10, borderRadius: 12, border: "none",
                 fontSize: "0.95em", fontWeight: 700, color: "#4F2E1B", cursor: "pointer",
                 background: "linear-gradient(90deg, #F69449, #FAC59E 50%, #F7A899)",
+                position: "relative", overflow: "hidden",
               }}>
                 <span>{plan.name}</span>
-                <span>R$ {(plan.priceInCents / 100).toFixed(2)}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {idx === 0 && <span style={{ background: "#e63946", color: "#fff", fontSize: "0.7em", padding: "2px 8px", borderRadius: 20, fontWeight: 800 }}>🔥 Mais Popular</span>}
+                  R$ {(plan.priceInCents / 100).toFixed(2)}
+                </span>
               </button>
             ))}
           </div>
