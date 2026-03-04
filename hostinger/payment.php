@@ -184,18 +184,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cid = $gw['novaplex_client_id'] ?? '';
             $csec = $gw['novaplex_client_secret'] ?? '';
             if (!$cid || !$csec) { echo json_encode(['error' => 'Credenciais NovaPlex não configuradas']); http_response_code(400); exit; }
-            // Auth
-            $authRes = apiCall('https://api.novaplex.com.br/api/auth/login', 'POST', ['Content-Type: application/json'],
-                json_encode(['client_id' => $cid, 'client_secret' => $csec]));
-            $token = $authRes['body']['token'] ?? null;
-            if (!$token) { echo json_encode(['error' => 'NovaPlex auth failed']); http_response_code(500); exit; }
             $extId = 'ord-' . time() . '-' . rand(100, 999);
-            $result = apiCall('https://api.novaplex.com.br/api/payments/deposit', 'POST', [
-                'Content-Type: application/json', "Authorization: Bearer $token"
-            ], json_encode(['amount' => $amount / 100, 'external_id' => $extId, 'payer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
+            $result = apiCall('https://api.novaplex.com/api/transactions/create', 'POST', [
+                'Content-Type: application/json', "ci: $cid", "cs: $csec"
+            ], json_encode([
+                'amount' => $amount / 100,
+                'payerName' => 'Cliente',
+                'payerDocument' => generateCPF(),
+                'transactionId' => $extId,
+                'description' => 'Assinatura Privacy'
+            ]));
             $data = $result['body'];
-            $qr = $data['pix']['qrcode'] ?? $data['qrCodeResponse']['qrcode'] ?? $data['qrcode'] ?? $data['qr_code'] ?? '';
-            $txId = $data['id'] ?? $extId;
+            $qr = $data['qrCodeResponse']['qrcode'] ?? $data['pix']['qrcode'] ?? $data['qrcode'] ?? '';
+            $txId = $data['id'] ?? $data['transactionId'] ?? $extId;
             logTransaction($userId, $profileId, 'novaplex', $amount, 'pending', $txId);
             echo json_encode(['id' => $txId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
 
@@ -264,14 +265,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
             echo json_encode($result['body']); exit;
 
         case 'novaplex':
-            $authRes = apiCall('https://api.novaplex.com.br/api/auth/login', 'POST', ['Content-Type: application/json'],
-                json_encode(['client_id' => $gw['novaplex_client_id'], 'client_secret' => $gw['novaplex_client_secret']]));
-            $token = $authRes['body']['token'] ?? null;
-            $result = apiCall("https://api.novaplex.com.br/api/payments/deposit/" . urlencode($id), 'GET', [
-                "Authorization: Bearer $token", 'Accept: application/json'
+            $cid = $gw['novaplex_client_id'] ?? '';
+            $csec = $gw['novaplex_client_secret'] ?? '';
+            $result = apiCall("https://api.novaplex.com/api/transactions/" . urlencode($id), 'GET', [
+                "ci: $cid", "cs: $csec", 'Accept: application/json'
             ]);
-            $st = strtolower($result['body']['status'] ?? 'pending');
-            $paid = in_array($st, ['completed', 'succeeded', 'paid', 'approved', 'confirmed']);
+            $st = strtoupper($result['body']['status'] ?? 'PENDENTE');
+            $paid = in_array($st, ['COMPLETO', 'COMPLETED', 'PAID', 'APPROVED']);
             echo json_encode(['status' => $paid ? 'paid' : 'pending']); exit;
 
         case 'vizzionpay':
