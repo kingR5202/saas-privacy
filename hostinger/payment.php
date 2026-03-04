@@ -13,11 +13,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 // Supabase config
 $SUPABASE_URL = 'https://qcvrmbqyawmgezifunkh.supabase.co';
-$SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjdnJtYnF5YXdtZ2V6aWZ1bmtoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjM4OTA0OSwiZXhwIjoyMDg3OTY1MDQ5fQ.gvmKFOBi4dk-bMAO5dBPDCVVyAKRxnGOjFYxfjlgFnQ';
+$SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjdnJtYnF5YXdtZ2V6aWZ1bmtoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjM4OTA0OSwiZXhwIjoyMDg3OTY1MDQ5fQ.H8vrN9r4orppkpg6XBQdbEnd8-AfAOwJ4MuoGV4aGFI';
 
 function supabaseGet($table, $filters) {
     global $SUPABASE_URL, $SUPABASE_KEY;
-    $query = http_build_query($filters);
+    $parts = [];
+    foreach ($filters as $k => $v) {
+        $parts[] = urlencode($k) . '=' . $v;
+    }
+    $query = implode('&', $parts);
     $url = "$SUPABASE_URL/rest/v1/$table?$query";
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -29,8 +33,14 @@ function supabaseGet($table, $filters) {
         ],
     ]);
     $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return json_decode($resp, true);
+    $decoded = json_decode($resp, true);
+    // Log errors
+    if ($httpCode >= 400) {
+        error_log("Supabase GET $table error ($httpCode): $resp");
+    }
+    return $decoded;
 }
 
 function generateCPF() {
@@ -74,6 +84,12 @@ if (!$userId) {
 
 // Get gateway config from Supabase
 $configs = supabaseGet('gateway_configs', ['userId' => "eq.$userId", 'select' => '*']);
+
+// Handle non-array response (error object from Supabase)
+if (!is_array($configs) || (isset($configs['message']) && !isset($configs[0]))) {
+    echo json_encode(['error' => 'Gateway não configurado. Configure no Dashboard.', 'debug' => $configs]); http_response_code(400); exit;
+}
+
 if (empty($configs) || !isset($configs[0])) {
     echo json_encode(['error' => 'Gateway não configurado. Configure no Dashboard.']); http_response_code(400); exit;
 }
@@ -84,6 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $amount = intval($input['amount'] ?? 0);
     if (!$amount) { echo json_encode(['error' => 'Amount required']); http_response_code(400); exit; }
 
+    $redirectUrl = $gw['redirect_url'] ?? '';
+
     switch ($gw['gateway']) {
         case 'pushinpay':
             $token = $gw['pushinpay_token'] ?? '';
@@ -91,7 +109,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = apiCall('https://api.pushinpay.com.br/api/pix/cashIn', 'POST', [
                 'Content-Type: application/json', 'Accept: application/json', "Authorization: Bearer $token"
             ], json_encode(['value' => $amount]));
-            echo json_encode($result['body']); exit;
+            $data = $result['body'];
+            echo json_encode([
+                'id' => $data['id'] ?? null,
+                'qr_code' => $data['qr_code'] ?? $data['pix_code'] ?? '',
+                'qr_code_base64' => $data['qr_code_base64'] ?? '',
+                'status' => 'PENDING', 'amount' => $amount,
+                'redirect_url' => $redirectUrl
+            ]); exit;
 
         case 'blackout':
             $pub = $gw['blackout_public_key'] ?? '';
@@ -105,7 +130,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'customer' => ['name' => 'Cliente', 'email' => 'cliente@anonimo.com', 'document' => ['number' => generateCPF(), 'type' => 'cpf']],
                 'items' => [['title' => 'Acesso Premium', 'unitPrice' => $amount, 'quantity' => 1, 'tangible' => false]],
             ]));
-            echo json_encode($result['body']); exit;
+            $data = $result['body'];
+            $qr = $data['pix']['qrcode'] ?? $data['qrcode'] ?? $data['qr_code'] ?? '';
+            echo json_encode([
+                'id' => $data['id'] ?? null,
+                'qr_code' => $qr,
+                'status' => 'PENDING', 'amount' => $amount,
+                'redirect_url' => $redirectUrl
+            ]); exit;
 
         case 'novaplex':
             $cid = $gw['novaplex_client_id'] ?? '';
@@ -121,8 +153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'Content-Type: application/json', "Authorization: Bearer $token"
             ], json_encode(['amount' => $amount / 100, 'external_id' => $extId, 'payer' => ['name' => 'Cliente', 'email' => 'c@p.com', 'document' => generateCPF()]]));
             $data = $result['body'];
-            $qr = $data['qrCodeResponse']['qrcode'] ?? $data['qrcode'] ?? '';
-            echo json_encode(['id' => $data['id'] ?? $extId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount]); exit;
+            $qr = $data['pix']['qrcode'] ?? $data['qrCodeResponse']['qrcode'] ?? $data['qrcode'] ?? $data['qr_code'] ?? '';
+            echo json_encode(['id' => $data['id'] ?? $extId, 'qr_code' => $qr, 'status' => 'PENDING', 'amount' => $amount, 'redirect_url' => $redirectUrl]); exit;
     }
 }
 

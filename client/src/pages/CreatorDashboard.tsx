@@ -515,19 +515,12 @@ export default function CreatorDashboard() {
               {/* Gateway Selection */}
               <div className="mb-6">
                 <label className="block text-sm font-medium mb-2">Gateway Ativo</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { id: "pushinpay", label: "PushinPay", color: "orange" },
-                    { id: "blackout", label: "Blackout", color: "gray" },
-                    { id: "novaplex", label: "NovaPlex", color: "blue" },
-                  ].map(gw => (
-                    <button key={gw.id}
-                      className={`p-4 rounded-xl border-2 text-center transition font-medium ${gatewayConfig.gateway === gw.id ? "border-orange-500 bg-orange-50 text-orange-700" : "border-gray-200 hover:border-gray-300"}`}
-                      onClick={() => setGatewayConfig({ ...gatewayConfig, gateway: gw.id })}>
-                      {gw.label}
-                    </button>
-                  ))}
-                </div>
+                <select className="w-full px-4 py-3 border-2 rounded-xl text-sm font-medium focus:border-orange-500 outline-none transition"
+                  value={gatewayConfig.gateway} onChange={e => setGatewayConfig({ ...gatewayConfig, gateway: e.target.value })}>
+                  <option value="pushinpay">PushinPay</option>
+                  <option value="blackout">Blackout (BlackPayments)</option>
+                  <option value="novaplex">NovaPlex</option>
+                </select>
               </div>
 
               {/* PushinPay Fields */}

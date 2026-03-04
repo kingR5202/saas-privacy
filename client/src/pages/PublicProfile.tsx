@@ -18,7 +18,6 @@ export default function PublicProfile() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "media">("posts");
@@ -41,20 +40,18 @@ export default function PublicProfile() {
     setPlans((plansData || []) as Plan[]);
     const { data: postsData } = await supabase.from("posts").select("*").eq("profileId", data.id).order("createdAt", { ascending: false });
     setPosts((postsData || []) as Post[]);
-    const { data: gwData } = await supabase.from("gateway_configs").select("gateway,redirect_url").eq("userId", data.userId).limit(1).single();
-    if (gwData) setGatewayConfig(gwData as GatewayConfig);
     setLoading(false);
   }, [username]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
   const handlePlanClick = async (plan: Plan) => {
-    if (!gatewayConfig || !profile) { alert("Gateway de pagamento não configurado."); return; }
+    if (!profile) return;
     setSelectedPlan(plan); setShowPixModal(true); setPixLoading(true); setPixError(""); setPixCode(""); setPixQrBase64(""); setPaymentStatus("Gerando cobrança PIX...");
     try {
       const resp = await fetch("/api/payment.php", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: profile.id, userId: profile.userId, amount: plan.priceInCents, gateway: gatewayConfig.gateway }),
+        body: JSON.stringify({ profileId: profile.id, userId: profile.userId, amount: plan.priceInCents }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || "Erro ao gerar PIX");
@@ -68,7 +65,7 @@ export default function PublicProfile() {
             const sd = await sr.json();
             if (["paid", "completed", "succeeded"].includes(sd.status)) {
               clearInterval(interval); setPaymentStatus("Pagamento confirmado! ✅");
-              if (gatewayConfig.redirect_url) setTimeout(() => { window.location.href = gatewayConfig.redirect_url!; }, 2000);
+              if (result.redirect_url) setTimeout(() => { window.location.href = result.redirect_url; }, 2000);
             }
           } catch { } // eslint-disable-line
         }, 5000);
