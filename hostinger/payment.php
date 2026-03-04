@@ -130,7 +130,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $amount = intval($input['amount'] ?? 0);
     if (!$amount) { echo json_encode(['error' => 'Amount required']); http_response_code(400); exit; }
 
+    // Get per-profile redirect URL (falls back to gateway config redirect)
     $redirectUrl = $gw['redirect_url'] ?? '';
+    if ($profileId) {
+        $profileData = supabaseGet('profiles', ['id' => "eq.$profileId", 'select' => 'redirect_url']);
+        if (!empty($profileData[0]['redirect_url'])) {
+            $redirectUrl = $profileData[0]['redirect_url'];
+        }
+    }
 
     switch ($gw['gateway']) {
         case 'pushinpay':

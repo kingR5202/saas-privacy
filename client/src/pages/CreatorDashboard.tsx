@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Settings, LogOut, Home, Loader2, Save, Trash2, ExternalLink, Copy, Upload, ImagePlus, Pencil } from "lucide-react";
+import { Plus, Settings, LogOut, Home, Loader2, Save, Trash2, ExternalLink, Copy, Upload, ImagePlus, Pencil, Eye, EyeOff, Heart, Flame, X, DollarSign, TrendingUp, BarChart3 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 
@@ -11,11 +11,12 @@ interface Profile {
   id: number; userId: string; username: string; displayName: string; bio: string | null;
   profilePicUrl: string | null; bannerUrl: string | null; isActive: boolean; theme: string;
   totalSubscribers: number; totalPosts: number; totalMedia: number; totalExclusive: number; totalLikes: number;
+  redirect_url: string | null;
 }
 
 interface Post {
   id: number; profileId: number; imageUrl: string | null; videoUrl: string | null;
-  caption: string | null; isLocked: boolean; createdAt: string;
+  caption: string | null; isLocked: boolean; likes: number; createdAt: string;
 }
 
 interface GatewayConfig {
@@ -44,6 +45,12 @@ export default function CreatorDashboard() {
   const [newPostCaption, setNewPostCaption] = useState("");
   const [newPostImage, setNewPostImage] = useState("");
   const [uploadingPostImg, setUploadingPostImg] = useState(false);
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+
+  // Sales state
+  interface ProfileSales { profileId: number; profileName: string; username: string; pixCount: number; totalAmount: number; }
+  const [salesData, setSalesData] = useState<ProfileSales[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   // Profile state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -150,6 +157,7 @@ export default function CreatorDashboard() {
       totalMedia: editingProfile.totalMedia || 0,
       totalExclusive: editingProfile.totalExclusive || 0,
       totalLikes: editingProfile.totalLikes || 0,
+      redirect_url: editingProfile.redirect_url || null,
     }).eq("id", editingProfile.id);
     if (error) alert("Erro: " + error.message);
     else { setEditingProfile(null); loadProfiles(); }
@@ -186,7 +194,37 @@ export default function CreatorDashboard() {
     loadProfilePosts(selectedProfileId);
   };
 
-  // Save gateway config
+  // Update post
+  const handleUpdatePost = async () => {
+    if (!editingPost || !selectedProfileId) return;
+    setSaving(true);
+    await supabase.from("posts").update({
+      caption: editingPost.caption,
+      isLocked: editingPost.isLocked,
+      likes: editingPost.likes,
+    }).eq("id", editingPost.id);
+    setEditingPost(null);
+    loadProfilePosts(selectedProfileId);
+    setSaving(false);
+  };
+
+  // Load sales data
+  const loadSalesData = async () => {
+    if (!user) return;
+    setLoadingSales(true);
+    const { data: txData } = await supabase.from("transactions").select("*").eq("user_id", user.id);
+    const txs = txData || [];
+    const salesMap = new Map<number, ProfileSales>();
+    for (const p of profiles) {
+      salesMap.set(p.id, { profileId: p.id, profileName: p.displayName, username: p.username, pixCount: 0, totalAmount: 0 });
+    }
+    for (const tx of txs) {
+      const s = salesMap.get(tx.profile_id);
+      if (s) { s.pixCount++; s.totalAmount += tx.amount; }
+    }
+    setSalesData(Array.from(salesMap.values()));
+    setLoadingSales(false);
+  };
   const handleSaveGateway = async () => {
     setSavingGateway(true);
     setGatewayMsg("");
@@ -233,6 +271,10 @@ export default function CreatorDashboard() {
             <div><h1 className="font-bold text-lg">Privacy Creator</h1><p className="text-xs text-gray-500">Dashboard</p></div>
           </div>
           <div className="flex items-center gap-3">
+            <a href="https://bot-x.org/hottok?r=6846046252" target="_blank" rel="noopener noreferrer"
+              className="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-lg text-sm font-bold hover:from-pink-600 hover:to-red-600 transition shadow-md">
+              <Flame className="w-4 h-4" /> IA Hot 🔥
+            </a>
             <span className="text-sm text-gray-600 hidden md:block">{user.email}</span>
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}><Home className="w-5 h-5" /></Button>
             <Button variant="ghost" size="icon" onClick={() => { signOut(); navigate("/"); }}><LogOut className="w-5 h-5" /></Button>
@@ -242,8 +284,9 @@ export default function CreatorDashboard() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-8">
+          <TabsList className="grid w-full grid-cols-5 mb-8">
             <TabsTrigger value="profiles">Meus Perfis</TabsTrigger>
+            <TabsTrigger value="vendas" onClick={() => loadSalesData()}>Vendas</TabsTrigger>
             <TabsTrigger value="gateway">Gateway</TabsTrigger>
             <TabsTrigger value="plans">Planos</TabsTrigger>
             <TabsTrigger value="posts">Postagens</TabsTrigger>
@@ -449,6 +492,14 @@ export default function CreatorDashboard() {
                     </div>
                   </div>
 
+                  {/* Redirect URL */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">🔗 URL de Redirecionamento (após pagamento)</label>
+                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="https://t.me/seu_grupo ou link do conteúdo..."
+                      value={editingProfile.redirect_url || ""} onChange={e => setEditingProfile({ ...editingProfile, redirect_url: e.target.value })} />
+                    <p className="text-xs text-gray-500 mt-1">O cliente será redirecionado para este link após confirmar o pagamento PIX deste perfil.</p>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Foto de Perfil</label>
                     <div className="flex items-center gap-3">
@@ -503,6 +554,123 @@ export default function CreatorDashboard() {
                   <Button variant="outline" onClick={() => setEditingProfile(null)}>Cancelar</Button>
                 </div>
               </Card>
+            )}
+          </TabsContent>
+
+          {/* ============ VENDAS TAB ============ */}
+          <TabsContent value="vendas" className="space-y-6">
+            <h2 className="text-2xl font-bold">Dashboard de Vendas</h2>
+            <p className="text-gray-600">Acompanhe o desempenho de vendas de cada modelo/perfil.</p>
+
+            {loadingSales ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
+            ) : (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border-0 text-white shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Total Vendas</p>
+                        <p className="text-2xl font-black mt-1">
+                          R$ {(salesData.reduce((s, d) => s + d.totalAmount, 0) / 100).toFixed(2)}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">Em {salesData.reduce((s, d) => s + d.pixCount, 0)} vendas</p>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
+                        <DollarSign className="w-6 h-6 text-green-400" />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border-0 text-white shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">PIX Gerados</p>
+                        <p className="text-2xl font-black mt-1">{salesData.reduce((s, d) => s + d.pixCount, 0)}</p>
+                        <p className="text-xs text-slate-500 mt-1">Total de cobranças</p>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center">
+                        <BarChart3 className="w-6 h-6 text-orange-400" />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border-0 text-white shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Ticket Médio</p>
+                        <p className="text-2xl font-black mt-1">
+                          R$ {salesData.reduce((s, d) => s + d.pixCount, 0) > 0
+                            ? (salesData.reduce((s, d) => s + d.totalAmount, 0) / salesData.reduce((s, d) => s + d.pixCount, 0) / 100).toFixed(2)
+                            : "0.00"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">Valor médio por venda</p>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center">
+                        <TrendingUp className="w-6 h-6 text-cyan-400" />
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Per-Profile Sales */}
+                <Card className="bg-white border-0 shadow-lg overflow-hidden">
+                  <div className="p-5 border-b">
+                    <h3 className="font-bold text-lg flex items-center gap-2"><BarChart3 className="w-5 h-5 text-orange-500" /> Vendas por Modelo</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="text-left py-3 px-5 font-semibold text-gray-600">Modelo / Perfil</th>
+                          <th className="text-right py-3 px-5 font-semibold text-gray-600">PIX Gerados</th>
+                          <th className="text-right py-3 px-5 font-semibold text-gray-600">Total Vendas</th>
+                          <th className="text-right py-3 px-5 font-semibold text-gray-600">Ticket Médio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesData.map(s => (
+                          <tr key={s.profileId} className="border-b hover:bg-orange-50/50 transition">
+                            <td className="py-3 px-5">
+                              <span className="font-bold">{s.profileName}</span>
+                              <span className="text-gray-400 ml-2">@{s.username}</span>
+                            </td>
+                            <td className="py-3 px-5 text-right">
+                              <span className="inline-flex items-center gap-1 font-bold text-orange-600">{s.pixCount}</span>
+                            </td>
+                            <td className="py-3 px-5 text-right">
+                              <span className="font-bold text-green-600">R$ {(s.totalAmount / 100).toFixed(2)}</span>
+                            </td>
+                            <td className="py-3 px-5 text-right text-gray-600">
+                              R$ {s.pixCount > 0 ? (s.totalAmount / s.pixCount / 100).toFixed(2) : "0.00"}
+                            </td>
+                          </tr>
+                        ))}
+                        {salesData.length === 0 && (
+                          <tr><td colSpan={4} className="text-center py-8 text-gray-400">Nenhuma venda registrada ainda. As vendas aparecerão aqui quando um PIX for gerado.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                {/* Métodos de Pagamento */}
+                <Card className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border-0 text-white shadow-lg">
+                  <h3 className="font-bold text-sm text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" /> Métodos de Pagamento
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-sm"><span className="text-lg">📱</span> Pix</span>
+                      <span className="text-green-400 font-bold">100%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full" style={{ width: "100%" }} />
+                    </div>
+                  </div>
+                </Card>
+              </>
             )}
           </TabsContent>
 
@@ -744,24 +912,91 @@ export default function CreatorDashboard() {
                   </Card>
                 )}
 
+                {/* IA Hot Button - Mobile */}
+                <a href="https://bot-x.org/hottok?r=6846046252" target="_blank" rel="noopener noreferrer"
+                  className="md:hidden flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-md">
+                  <Flame className="w-4 h-4" /> Gere suas fotos ficante com essa IA 🔥
+                </a>
+
+                {/* Edit Post Modal */}
+                {editingPost && (
+                  <Card className="p-6 bg-white border-0 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-lg">Editar Postagem</h3>
+                      <Button variant="ghost" size="icon" onClick={() => setEditingPost(null)}><X className="w-4 h-4" /></Button>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Legenda</label>
+                        <textarea className="w-full px-3 py-2 border rounded-lg" rows={3}
+                          value={editingPost.caption || ""} onChange={e => setEditingPost({ ...editingPost, caption: e.target.value })} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Curtidas</label>
+                          <div className="flex items-center gap-2">
+                            <Heart className="w-4 h-4 text-red-500" />
+                            <input type="number" min="0" className="w-full px-3 py-2 border rounded-lg"
+                              value={editingPost.likes} onChange={e => setEditingPost({ ...editingPost, likes: parseInt(e.target.value) || 0 })} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Visibilidade</label>
+                          <button onClick={() => setEditingPost({ ...editingPost, isLocked: !editingPost.isLocked })}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition ${editingPost.isLocked ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'
+                              }`}>
+                            {editingPost.isLocked ? <><EyeOff className="w-4 h-4" /> Conteúdo Oculto</> : <><Eye className="w-4 h-4" /> Conteúdo Visível</>}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleUpdatePost} disabled={saving}>
+                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar
+                        </Button>
+                        <Button variant="outline" onClick={() => setEditingPost(null)}>Cancelar</Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
                 {/* Posts list */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {profilePosts.length === 0 ? (
                     <p className="text-gray-500 text-center py-6 col-span-full">Nenhuma postagem criada ainda.</p>
                   ) : profilePosts.map(post => (
                     <Card key={post.id} className="overflow-hidden bg-white border-0 shadow-md">
-                      {post.imageUrl ? (
-                        <img src={post.imageUrl} alt="" className="w-full h-40 object-cover" />
-                      ) : (
-                        <div className="w-full h-40 bg-gray-100 flex items-center justify-center"><ImagePlus className="w-8 h-8 text-gray-300" /></div>
-                      )}
+                      <div className="relative">
+                        {post.imageUrl ? (
+                          <img src={post.imageUrl} alt="" className="w-full h-40 object-cover" />
+                        ) : (
+                          <div className="w-full h-40 bg-gray-100 flex items-center justify-center"><ImagePlus className="w-8 h-8 text-gray-300" /></div>
+                        )}
+                        {post.isLocked && (
+                          <span className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
+                            <EyeOff className="w-3 h-3" /> Oculto
+                          </span>
+                        )}
+                        {!post.isLocked && (
+                          <span className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> Visível
+                          </span>
+                        )}
+                      </div>
                       <div className="p-3">
-                        <p className="text-sm line-clamp-2 mb-2">{post.caption || 'Sem legenda'}</p>
+                        <p className="text-sm line-clamp-2 mb-1">{post.caption || 'Sem legenda'}</p>
+                        <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                          <Heart className="w-3 h-3 text-red-400" /> {post.likes || 0} curtidas
+                        </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-gray-400">{new Date(post.createdAt).toLocaleDateString('pt-BR')}</span>
-                          <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={() => handleDeletePost(post.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="text-orange-500 hover:text-orange-600 hover:bg-orange-50 h-8 w-8" onClick={() => setEditingPost({ ...post })}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8" onClick={() => handleDeletePost(post.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </Card>

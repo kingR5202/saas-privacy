@@ -167,18 +167,6 @@ export default function PublicProfile() {
             <i className="fas fa-comment-dots" style={{ fontSize: "0.85em" }} /> Chat
           </button>
         </div>
-        {/* ===== IA HOT BUTTON ===== */}
-        <div style={{ padding: "0 20px 18px" }}>
-          <a href="https://bot-x.org/hottok?r=6846046252" target="_blank" rel="noopener noreferrer" style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            width: "100%", padding: "14px", borderRadius: 12, border: "none",
-            background: "linear-gradient(135deg, #ff4d6d, #ff758f, #ff4d6d)", color: "#fff",
-            fontWeight: 700, fontSize: "0.95em", cursor: "pointer", textDecoration: "none",
-            boxShadow: "0 4px 15px rgba(255, 77, 109, 0.35)",
-          }}>
-            <i className="fas fa-fire" style={{ fontSize: "1.1em" }} /> Gere suas fotos ficante com essa IA 🔥
-          </a>
-        </div>
 
         {/* ===== SUBSCRIPTION PLANS ===== */}
         {plans.length > 0 && (

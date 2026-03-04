@@ -3,7 +3,15 @@ import { supabase } from "@/lib/supabaseClient";
 import { Card } from "@/components/ui/card";
 import { Loader2, Users, DollarSign, Activity, Eye, EyeOff, BarChart3 } from "lucide-react";
 
-const ADMIN_PASSWORD = "admin2026";
+const ADMIN_PASSWORD = "Rtydfgxc5202@";
+const MAX_LOGIN_ATTEMPTS = 5;
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+// XSS sanitization helper
+const sanitize = (str: string | null | undefined): string => {
+  if (!str) return "";
+  return str.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m] || m));
+};
 
 interface UserProfile {
   userId: string;
@@ -32,14 +40,28 @@ export default function AdminPanel() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeTab, setActiveTab] = useState<"users" | "transactions">("users");
   const [showPassword, setShowPassword] = useState(false);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+
+  // Session timeout
+  useEffect(() => {
+    if (!authenticated) return;
+    const timer = setTimeout(() => setAuthenticated(false), SESSION_TIMEOUT);
+    return () => clearTimeout(timer);
+  }, [authenticated]);
 
   const handleLogin = () => {
+    if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+      setPasswordError("Muitas tentativas. Tente novamente mais tarde.");
+      return;
+    }
     if (password === ADMIN_PASSWORD) {
       setAuthenticated(true);
       setPasswordError("");
+      setLoginAttempts(0);
       loadData();
     } else {
-      setPasswordError("Senha incorreta");
+      setLoginAttempts(a => a + 1);
+      setPasswordError(`Senha incorreta (${loginAttempts + 1}/${MAX_LOGIN_ATTEMPTS})`);
     }
   };
 
