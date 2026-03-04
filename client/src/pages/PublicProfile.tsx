@@ -10,7 +10,6 @@ interface Profile {
 }
 interface Plan { id: number; name: string; description: string | null; priceInCents: number; billingCycle: string; }
 interface Post { id: number; profileId: number; imageUrl: string | null; videoUrl: string | null; caption: string | null; isLocked: boolean; createdAt: string; }
-interface GatewayConfig { gateway: string; redirect_url?: string; }
 
 export default function PublicProfile() {
   const [, params] = useRoute("/:username");
@@ -29,6 +28,7 @@ export default function PublicProfile() {
   const [pixError, setPixError] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [showQr, setShowQr] = useState(false);
+  const [expandedBio, setExpandedBio] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!username) return;
@@ -74,10 +74,10 @@ export default function PublicProfile() {
     } catch (err: any) { setPixError(err.message); setPaymentStatus(""); } finally { setPixLoading(false); }
   };
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen bg-black"><Loader2 className="animate-spin w-8 h-8 text-white" /></div>;
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#000" }}><Loader2 className="animate-spin" style={{ width: 32, height: 32, color: "#fff" }} /></div>;
   if (notFound || !profile) return (
-    <div className="flex items-center justify-center min-h-screen bg-black text-white">
-      <div className="text-center"><h1 className="text-3xl font-bold mb-2">Perfil não encontrado</h1><p className="text-gray-400">O perfil @{username} não existe.</p></div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#000", color: "#fff" }}>
+      <div style={{ textAlign: "center" }}><h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Perfil não encontrado</h1><p style={{ color: "#888" }}>O perfil @{username} não existe.</p></div>
     </div>
   );
 
@@ -86,81 +86,97 @@ export default function PublicProfile() {
   const cardBg = dark ? "#1a1a1a" : "#FFFFFF";
   const textColor = dark ? "#ffffff" : "#1a1a1a";
   const subText = dark ? "#888" : "#6c6c6c";
-  const borderColor = dark ? "#2a2a2a" : "#F0F0F0";
+  const borderColor = dark ? "#2a2a2a" : "#E8E8E8";
   const lockedBg = dark ? "#1e1e1e" : "#F5F1ED";
+  const logoSrc = dark ? "/privacy-logo-white.svg" : "/privacy-logo.svg";
 
   const formatNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
+
+  const bioMaxLen = 120;
+  const bioText = profile.bio || "";
+  const bioTruncated = bioText.length > bioMaxLen && !expandedBio;
 
   return (
     <div style={{ minHeight: "100vh", background: bg, fontFamily: "'Lato', 'Segoe UI', sans-serif", color: textColor }}>
       <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet" />
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
-      {/* Top Header */}
-      <header style={{ width: "100%", background: cardBg, borderBottom: `1px solid ${borderColor}`, padding: "15px 0", textAlign: "center" }}>
-        <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "1px", textTransform: "lowercase" }}>privacy</span>
+      {/* ===== TOP LOGO BAR ===== */}
+      <header style={{ width: "100%", background: bg, padding: "16px 24px", display: "flex", alignItems: "center" }}>
+        <img src={logoSrc} alt="privacy" style={{ height: 18 }} />
       </header>
 
-      {/* Profile name bar */}
-      <div style={{ textAlign: "center", padding: "12px", borderBottom: `1px solid ${borderColor}`, background: cardBg }}>
-        <span style={{ fontWeight: 700, fontSize: "14px" }}>{profile.username}</span>
+      {/* ===== USERNAME BAR ===== */}
+      <div style={{ textAlign: "center", padding: "12px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <span style={{ fontWeight: 700, fontSize: 14 }}>{profile.username}</span>
+        <i className="fas fa-ellipsis-v" style={{ position: "absolute", right: 20, color: subText, cursor: "pointer" }} />
       </div>
 
-      {/* Main container */}
+      {/* ===== MAIN CONTAINER ===== */}
       <div style={{ maxWidth: 600, margin: "0 auto", background: cardBg, minHeight: "calc(100vh - 100px)" }}>
-        {/* Cover photo */}
+
+        {/* Cover Photo */}
         <div style={{
-          height: 180, backgroundSize: "cover", backgroundPosition: "center",
+          height: 200, backgroundSize: "cover", backgroundPosition: "center", position: "relative",
           background: profile.bannerUrl ? `url(${profile.bannerUrl}) center/cover` : "linear-gradient(135deg, #e67a3d, #f4a574)",
-        }} />
+        }}>
+          {/* Profile pic overlapping cover */}
+          <div style={{ position: "absolute", bottom: -40, left: 16 }}>
+            {profile.profilePicUrl ? (
+              <img src={profile.profilePicUrl} alt="" style={{ width: 85, height: 85, borderRadius: "50%", border: `4px solid ${cardBg}`, objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }} />
+            ) : (
+              <div style={{ width: 85, height: 85, borderRadius: "50%", border: `4px solid ${cardBg}`, background: "linear-gradient(135deg, #e67a3d, #f4a574)" }} />
+            )}
+          </div>
 
-        {/* Profile info bar */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "0 20px", marginTop: -45 }}>
-          {profile.profilePicUrl ? (
-            <img src={profile.profilePicUrl} alt="" style={{ width: 90, height: 90, borderRadius: "50%", border: `4px solid ${cardBg}`, objectFit: "cover", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }} />
-          ) : (
-            <div style={{ width: 90, height: 90, borderRadius: "50%", border: `4px solid ${cardBg}`, background: "linear-gradient(135deg, #e67a3d, #f4a574)" }} />
-          )}
-          <div style={{ display: "flex", gap: 15, fontSize: "0.85em", color: subText, paddingBottom: 8 }}>
-            <span><i className="fas fa-image" style={{ marginRight: 4 }} />{formatNum(profile.totalPosts)}</span>
-            <span><i className="fas fa-play-circle" style={{ marginRight: 4 }} />{formatNum(profile.totalMedia)}</span>
-            <span><i className="fas fa-lock" style={{ marginRight: 4 }} />{profile.totalExclusive}</span>
-            <span><i className="fas fa-heart" style={{ marginRight: 4 }} />{formatNum(profile.totalLikes)}</span>
+          {/* Stats overlay on the right side of cover */}
+          <div style={{ position: "absolute", bottom: 12, right: 16, display: "flex", gap: 14, fontSize: "0.82em", color: "#fff" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><i className="fas fa-images" style={{ fontSize: "0.9em" }} /> {formatNum(profile.totalPosts)}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><i className="fas fa-film" style={{ fontSize: "0.9em" }} /> {formatNum(profile.totalMedia)}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><i className="fas fa-lock" style={{ fontSize: "0.9em" }} /> {profile.totalExclusive}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><i className="fas fa-heart" style={{ fontSize: "0.9em" }} /> {formatNum(profile.totalLikes)}</span>
           </div>
         </div>
 
-        {/* Profile details */}
-        <div style={{ padding: "15px 20px" }}>
-          <h1 style={{ fontSize: "1.1em", fontWeight: 900, display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+        {/* ===== NAME + BIO ===== */}
+        <div style={{ padding: "50px 20px 0" }}>
+          <h1 style={{ fontSize: "1.05em", fontWeight: 900, display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
             {profile.displayName}
-            <i className="fas fa-check-circle" style={{ color: "#e67a3d", fontSize: "0.7em" }} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
           </h1>
-          <p style={{ color: subText, fontSize: "1em", marginBottom: 12 }}>@{profile.username}</p>
-          {profile.bio && <p style={{ fontSize: "0.95em", lineHeight: 1.6, marginBottom: 15 }}>{profile.bio}</p>}
-          <div style={{ display: "flex", gap: 15, fontSize: "1.3em", color: subText, marginBottom: 10 }}>
-            <i className="fab fa-instagram" />
+          <p style={{ color: subText, fontSize: "0.9em", margin: "2px 0 10px" }}>@{profile.username}</p>
+          {bioText && (
+            <p style={{ fontSize: "0.92em", lineHeight: 1.6, margin: "0 0 4px", whiteSpace: "pre-wrap" }}>
+              {bioTruncated ? bioText.slice(0, bioMaxLen) + "..." : bioText}
+              {bioTruncated && <span onClick={() => setExpandedBio(true)} style={{ color: "#e67a3d", cursor: "pointer", marginLeft: 4, fontWeight: 600 }}>Ler mais</span>}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 12, marginTop: 10, marginBottom: 8 }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${borderColor}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <i className="fab fa-instagram" style={{ fontSize: "0.95em", color: subText }} />
+            </div>
           </div>
         </div>
 
-        {/* Subscription buttons - Mimo & Chat style */}
-        <div style={{ padding: "0 20px 15px", display: "flex", gap: 10 }}>
-          <button style={{ flex: 1, padding: "12px", borderRadius: 25, border: `1px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="fas fa-dollar-sign" /> Mimo
+        {/* ===== MIMO / CHAT BUTTONS ===== */}
+        <div style={{ padding: "8px 20px 18px", display: "flex", gap: 10 }}>
+          <button style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <i className="fas fa-dollar-sign" style={{ fontSize: "0.85em" }} /> Mimo
           </button>
-          <button style={{ flex: 1, padding: "12px", borderRadius: 25, border: `1px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="fas fa-comment-dots" /> Chat
+          <button style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1.5px solid ${borderColor}`, background: "transparent", color: textColor, fontWeight: 700, fontSize: "0.95em", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <i className="fas fa-comment-dots" style={{ fontSize: "0.85em" }} /> Chat
           </button>
         </div>
 
-        {/* Subscription Plans */}
+        {/* ===== SUBSCRIPTION PLANS ===== */}
         {plans.length > 0 && (
           <div style={{ padding: "0 20px 20px" }}>
-            <h2 style={{ fontSize: "1em", fontWeight: 700, color: subText, marginBottom: 10 }}>Assinaturas</h2>
+            <h2 style={{ fontSize: "0.95em", fontWeight: 700, color: subText, marginBottom: 10 }}>Assinaturas</h2>
             {plans.map(plan => (
               <button key={plan.id} onClick={() => handlePlanClick(plan)} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
-                padding: "16px 20px", marginBottom: 10, borderRadius: 15, border: "none",
-                fontSize: "1em", fontWeight: 700, color: "#4F2E1B", cursor: "pointer",
+                padding: "16px 20px", marginBottom: 10, borderRadius: 12, border: "none",
+                fontSize: "0.95em", fontWeight: 700, color: "#4F2E1B", cursor: "pointer",
                 background: "linear-gradient(90deg, #F69449, #FAC59E 50%, #F7A899)",
               }}>
                 <span>{plan.name}</span>
@@ -170,45 +186,60 @@ export default function PublicProfile() {
           </div>
         )}
 
-        {/* Content Tabs */}
-        <div style={{ borderTop: `1px solid ${borderColor}`, marginTop: 10, paddingTop: 15, padding: "0 20px" }}>
-          <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: `1px solid ${borderColor}` }}>
+        {/* ===== CONTENT TABS ===== */}
+        <div style={{ borderTop: `1px solid ${borderColor}` }}>
+          <div style={{ display: "flex" }}>
             <button onClick={() => setActiveTab("posts")} style={{
-              flex: 1, padding: 15, background: "transparent", border: "none", cursor: "pointer",
-              fontSize: "0.95em", fontWeight: 700, color: activeTab === "posts" ? "#e67a3d" : subText,
-              borderBottom: activeTab === "posts" ? "3px solid #e67a3d" : "3px solid transparent",
+              flex: 1, padding: "16px 0", background: "transparent", border: "none", cursor: "pointer",
+              fontSize: "0.9em", fontWeight: 700, color: activeTab === "posts" ? "#e67a3d" : subText,
+              borderBottom: activeTab === "posts" ? "2px solid #e67a3d" : `2px solid transparent`,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
-              <i className="fas fa-mobile-alt" style={{ marginRight: 6 }} />{profile.totalPosts} Postagens
+              <i className="fas fa-file-alt" style={{ fontSize: "0.85em" }} /> {profile.totalPosts} Postagens
             </button>
             <button onClick={() => setActiveTab("media")} style={{
-              flex: 1, padding: 15, background: "transparent", border: "none", cursor: "pointer",
-              fontSize: "0.95em", fontWeight: 700, color: activeTab === "media" ? "#e67a3d" : subText,
-              borderBottom: activeTab === "media" ? "3px solid #e67a3d" : "3px solid transparent",
+              flex: 1, padding: "16px 0", background: "transparent", border: "none", cursor: "pointer",
+              fontSize: "0.9em", fontWeight: 700, color: activeTab === "media" ? "#e67a3d" : subText,
+              borderBottom: activeTab === "media" ? "2px solid #e67a3d" : `2px solid transparent`,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
-              <i className="fas fa-photo-video" style={{ marginRight: 6 }} />{profile.totalMedia} Mídias
+              <i className="fas fa-photo-video" style={{ fontSize: "0.85em" }} /> {profile.totalMedia} Mídias
             </button>
           </div>
 
-          {/* Posts tab */}
+          {/* ===== POSTS TAB ===== */}
           {activeTab === "posts" && (
-            <div style={{ marginTop: 20, paddingBottom: 40 }}>
+            <div style={{ padding: "16px 0" }}>
               {posts.length > 0 ? posts.map(post => (
-                <div key={post.id} style={{ border: `1px solid ${borderColor}`, borderRadius: 15, overflow: "hidden", marginBottom: 15 }}>
+                <div key={post.id} style={{ borderBottom: `1px solid ${borderColor}`, paddingBottom: 0, marginBottom: 0 }}>
                   {/* Post header */}
-                  <div style={{ display: "flex", alignItems: "center", padding: 12, gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10 }}>
                     {profile.profilePicUrl ? (
-                      <img src={profile.profilePicUrl} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
+                      <img src={profile.profilePicUrl} alt="" style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover" }} />
                     ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#e67a3d" }} />
+                      <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#e67a3d" }} />
                     )}
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontWeight: 700, fontSize: "0.95em" }}>{profile.displayName} <i className="fas fa-check-circle" style={{ color: "#e67a3d", fontSize: "0.65em" }} /></span>
-                      <br /><span style={{ color: subText, fontSize: "0.85em" }}>@{profile.username}</span>
+                      <span style={{ fontWeight: 700, fontSize: "0.92em" }}>
+                        {profile.displayName}{" "}
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: "middle" }}><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
+                      </span>
+                      <br /><span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
                     </div>
-                    <span style={{ color: subText, fontSize: "0.8em" }}>{new Date(post.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}</span>
-                    <i className="fas fa-ellipsis-h" style={{ color: subText, marginLeft: 8 }} />
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ color: subText, fontSize: "0.78em" }}>{new Date(post.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                      <i className="fas fa-ellipsis-h" style={{ color: subText, marginLeft: 10, fontSize: "0.85em" }} />
+                    </div>
                   </div>
-                  {/* Post content */}
+
+                  {/* Post caption (above image, like real Privacy) */}
+                  {post.caption && (
+                    <div style={{ padding: "0 16px 10px", fontSize: "0.92em", lineHeight: 1.55 }}>
+                      <span style={{ fontWeight: 700 }}>{post.caption}</span>
+                    </div>
+                  )}
+
+                  {/* Post image/video */}
                   {post.imageUrl && (
                     <div style={{ position: "relative" }}>
                       <img src={post.imageUrl} alt="" style={{ width: "100%", display: "block" }} />
@@ -223,49 +254,60 @@ export default function PublicProfile() {
                     <video src={post.videoUrl} autoPlay muted loop playsInline style={{ width: "100%", display: "block" }} />
                   )}
                   {!post.imageUrl && !post.videoUrl && (
-                    <div style={{ background: lockedBg, padding: 40, textAlign: "center" }}>
+                    <div style={{ background: lockedBg, padding: 50, textAlign: "center" }}>
                       <i className="fas fa-lock" style={{ fontSize: "2.5em", color: subText }} />
                     </div>
                   )}
-                  {/* Post actions */}
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 15px", fontSize: "1.3em", color: subText }}>
-                    <div style={{ display: "flex", gap: 18 }}>
-                      <i className="far fa-heart" />
-                      <i className="far fa-comment" />
-                      <i className="fas fa-dollar-sign" style={{ border: `2px solid ${subText}`, borderRadius: "50%", fontSize: "0.7em", padding: 4, width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" }} />
+
+                  {/* Post action bar */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
+                    <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <i className="far fa-heart" style={{ fontSize: "1.2em", color: subText, cursor: "pointer" }} />
+                      </div>
+                      <i className="far fa-comment" style={{ fontSize: "1.15em", color: subText, cursor: "pointer" }} />
+                      <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${subText}`, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                        <i className="fas fa-dollar-sign" style={{ fontSize: "0.6em", color: subText }} />
+                      </div>
                     </div>
-                    <i className="far fa-bookmark" />
+                    <i className="far fa-bookmark" style={{ fontSize: "1.15em", color: subText, cursor: "pointer" }} />
                   </div>
                 </div>
               )) : (
-                <div style={{ border: `1px solid ${borderColor}`, borderRadius: 15, overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", padding: 12, gap: 10 }}>
+                /* Placeholder locked post when no posts exist */
+                <div style={{ borderBottom: `1px solid ${borderColor}` }}>
+                  <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10 }}>
                     {profile.profilePicUrl ? (
-                      <img src={profile.profilePicUrl} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
+                      <img src={profile.profilePicUrl} alt="" style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover" }} />
                     ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#e67a3d" }} />
+                      <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#e67a3d" }} />
                     )}
-                    <div><span style={{ fontWeight: 700 }}>{profile.displayName} <i className="fas fa-check-circle" style={{ color: "#e67a3d", fontSize: "0.65em" }} /></span><br /><span style={{ color: subText, fontSize: "0.85em" }}>@{profile.username}</span></div>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: "0.92em" }}>{profile.displayName}{" "}
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: "middle" }}><circle cx="12" cy="12" r="12" fill="#e67a3d" /><path d="M10 16l-4-4 1.4-1.4L10 13.2 16.6 6.6 18 8l-8 8z" fill="#fff" /></svg>
+                      </span>
+                      <br /><span style={{ color: subText, fontSize: "0.82em" }}>@{profile.username}</span>
+                    </div>
                   </div>
                   <div style={{ background: lockedBg, padding: 60, textAlign: "center" }}>
                     <i className="fas fa-lock" style={{ fontSize: "2.5em", color: subText }} />
                     <p style={{ color: subText, marginTop: 12, fontWeight: 700 }}>Conteúdo Exclusivo</p>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 15px", fontSize: "1.3em", color: subText }}>
-                    <div style={{ display: "flex", gap: 18 }}><i className="far fa-heart" /><i className="far fa-comment" /></div>
-                    <i className="far fa-bookmark" />
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 16px", color: subText }}>
+                    <div style={{ display: "flex", gap: 18 }}><i className="far fa-heart" style={{ fontSize: "1.2em" }} /><i className="far fa-comment" style={{ fontSize: "1.15em" }} /></div>
+                    <i className="far fa-bookmark" style={{ fontSize: "1.15em" }} />
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Media tab */}
+          {/* ===== MEDIA TAB ===== */}
           {activeTab === "media" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 20, paddingBottom: 40 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, padding: 16, paddingBottom: 40 }}>
               {(posts.filter(p => p.imageUrl).length > 0 ? posts.filter(p => p.imageUrl) : Array(6).fill(null)).map((post, i) => (
                 <div key={post?.id || i} style={{
-                  aspectRatio: "1/1", background: lockedBg, borderRadius: 10, display: "flex",
+                  aspectRatio: "1/1", background: lockedBg, borderRadius: 6, display: "flex",
                   alignItems: "center", justifyContent: "center", overflow: "hidden",
                   backgroundImage: post?.imageUrl ? `url(${post.imageUrl})` : undefined,
                   backgroundSize: "cover", backgroundPosition: "center", position: "relative",
@@ -282,7 +324,7 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* PIX Modal */}
+      {/* ===== PIX MODAL ===== */}
       {showPixModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 15 }} onClick={() => setShowPixModal(false)}>
           <div style={{ background: "#fff", borderRadius: 16, maxWidth: 400, width: "100%", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
