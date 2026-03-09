@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Settings, LogOut, Home, Loader2, Save, Trash2, ExternalLink, Copy, Upload, ImagePlus, Pencil, Eye, EyeOff, Heart, Flame, X, DollarSign, TrendingUp, BarChart3 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface Profile {
   id: number; userId: string; username: string; displayName: string; bio: string | null;
@@ -33,7 +34,9 @@ interface GatewayConfig {
   alphacash_public_key?: string;
   alphacash_secret_key?: string;
   buckpay_token?: string;
-  buckpay_user_agent?: string;
+  aureapag_api_token?: string;
+  aureapag_offer_hash?: string;
+  aureapag_product_hash?: string;
   redirect_url?: string;
 }
 
@@ -47,6 +50,9 @@ export default function CreatorDashboard() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("profiles");
 
+  // Privacy Header State
+  const [showEmail, setShowEmail] = useState(false);
+
   // Posts state
   const [profilePosts, setProfilePosts] = useState<Post[]>([]);
   const [showCreatePost, setShowCreatePost] = useState(false);
@@ -56,8 +62,9 @@ export default function CreatorDashboard() {
   const [editingPost, setEditingPost] = useState<Post | null>(null);
 
   // Sales state
-  interface ProfileSales { profileId: number; profileName: string; username: string; pixCount: number; totalAmount: number; }
+  interface ProfileSales { profileId: number; profileName: string; username: string; pixCount: number; salesCount: number; totalAmount: number; }
   const [salesData, setSalesData] = useState<ProfileSales[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
 
   // Profile state
@@ -84,6 +91,7 @@ export default function CreatorDashboard() {
 
   // Gateway state
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>({ gateway: "pushinpay" });
+  const [showSecrets, setShowSecrets] = useState(false);
   const [savingGateway, setSavingGateway] = useState(false);
   const [gatewayMsg, setGatewayMsg] = useState("");
 
@@ -225,17 +233,71 @@ export default function CreatorDashboard() {
   const loadSalesData = async () => {
     if (!user) return;
     setLoadingSales(true);
-    const { data: txData } = await supabase.from("transactions").select("*").eq("user_id", user.id);
-    const txs = txData || [];
-    const salesMap = new Map<number, ProfileSales>();
-    for (const p of profiles) {
-      salesMap.set(p.id, { profileId: p.id, profileName: p.displayName, username: p.username, pixCount: 0, totalAmount: 0 });
+
+    // 1. Pega os IDs dos perfis do usuário
+    const profileIds = profiles.map(p => p.id);
+
+    if (profileIds.length > 0) {
+      // 2. Busca todas as transações onde profileId pertença a um dos perfis do usuário (pending ou completed)
+      const { data: txData } = await supabase.from("transactions")
+        .select("*")
+        .in("profileId", profileIds);
+
+      const txs = txData || [];
+      const salesMap = new Map<number, ProfileSales>();
+
+      for (const p of profiles) {
+        salesMap.set(p.id, { profileId: p.id, profileName: p.displayName, username: p.username, pixCount: 0, salesCount: 0, totalAmount: 0 });
+      }
+
+      const chartMap = new Map<string, any>();
+
+      for (const tx of txs) {
+        // Group for Dashboard Card
+        const s = salesMap.get(tx.profileId);
+        if (s) {
+          s.pixCount++; // Gerado independentemente de pago ou nao
+          if (tx.status === "completed" || tx.status === "paid" || tx.status === "succeeded") {
+            s.salesCount++;
+            s.totalAmount += (tx.amountInCents || 0);
+          }
+        }
+
+        // Group for Recharts Graph
+        const dateObj = new Date(tx.createdAt);
+        const dateStr = dateObj.toISOString().split("T")[0]; // YYYY-MM-DD
+
+        if (!chartMap.has(dateStr)) {
+          chartMap.set(dateStr, {
+            date: dateStr,
+            dateObj: dateObj,
+            Pendente: 0,
+            Concluído: 0,
+            Cancelado: 0,
+            "Em Análise": 0
+          });
+        }
+
+        const dayData = chartMap.get(dateStr);
+        if (tx.status === 'completed' || tx.status === 'paid' || tx.status === 'succeeded' || tx.status === 'approved') {
+          dayData.Concluído++;
+        } else if (tx.status === 'canceled' || tx.status === 'failed') {
+          dayData.Cancelado++;
+        } else if (tx.status === 'processing' || tx.status === 'analysis') {
+          dayData["Em Análise"]++;
+        } else {
+          dayData.Pendente++;
+        }
+      }
+      setSalesData(Array.from(salesMap.values()));
+
+      const sortedChart = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      setChartData(sortedChart);
+    } else {
+      setSalesData([]);
+      setChartData([]);
     }
-    for (const tx of txs) {
-      const s = salesMap.get(tx.profile_id);
-      if (s) { s.pixCount++; s.totalAmount += tx.amount; }
-    }
-    setSalesData(Array.from(salesMap.values()));
+
     setLoadingSales(false);
   };
   const handleSaveGateway = async () => {
@@ -288,7 +350,21 @@ export default function CreatorDashboard() {
               className="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-lg text-sm font-bold hover:from-pink-600 hover:to-red-600 transition shadow-md">
               <Flame className="w-4 h-4" /> IA Hot 🔥
             </a>
-            <span className="text-sm text-gray-600 hidden md:block">{user.email}</span>
+
+            {/* Privacy Email Toggle */}
+            <div className="hidden md:flex items-center gap-2 bg-slate-100 rounded-full px-4 py-1.5 border border-slate-200">
+              <span className="text-sm text-slate-700 font-medium">
+                {showEmail ? user.email : "••••••@•••••.com"}
+              </span>
+              <button
+                onClick={() => setShowEmail(!showEmail)}
+                className="text-slate-400 hover:text-orange-500 transition ml-1"
+                title={showEmail ? "Ocultar Email" : "Mostrar Email"}
+              >
+                {showEmail ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}><Home className="w-5 h-5" /></Button>
             <Button variant="ghost" size="icon" onClick={() => { signOut(); navigate("/"); }}><LogOut className="w-5 h-5" /></Button>
           </div>
@@ -616,7 +692,7 @@ export default function CreatorDashboard() {
                         <p className="text-2xl font-black mt-1">
                           R$ {(salesData.reduce((s, d) => s + d.totalAmount, 0) / 100).toFixed(2)}
                         </p>
-                        <p className="text-xs text-slate-500 mt-1">Em {salesData.reduce((s, d) => s + d.pixCount, 0)} vendas</p>
+                        <p className="text-xs text-slate-500 mt-1">Em {salesData.reduce((s, d) => s + d.salesCount, 0)} vendas</p>
                       </div>
                       <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
                         <DollarSign className="w-6 h-6 text-green-400" />
@@ -642,11 +718,11 @@ export default function CreatorDashboard() {
                       <div>
                         <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Ticket Médio</p>
                         <p className="text-2xl font-black mt-1">
-                          R$ {salesData.reduce((s, d) => s + d.pixCount, 0) > 0
-                            ? (salesData.reduce((s, d) => s + d.totalAmount, 0) / salesData.reduce((s, d) => s + d.pixCount, 0) / 100).toFixed(2)
+                          R$ {salesData.reduce((s, d) => s + d.salesCount, 0) > 0
+                            ? (salesData.reduce((s, d) => s + d.totalAmount, 0) / salesData.reduce((s, d) => s + d.salesCount, 0) / 100).toFixed(2)
                             : "0.00"}
                         </p>
-                        <p className="text-xs text-slate-500 mt-1">Valor médio por venda</p>
+                        <p className="text-xs text-slate-500 mt-1">Valor médio por venda concluída</p>
                       </div>
                       <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center">
                         <TrendingUp className="w-6 h-6 text-cyan-400" />
@@ -654,6 +730,71 @@ export default function CreatorDashboard() {
                     </div>
                   </Card>
                 </div>
+
+                {/* Chart Area */}
+                <Card className="p-6 bg-slate-50 border-0 shadow-md">
+                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-800">
+                    <BarChart3 className="w-5 h-5 text-orange-500" /> Gráfico de Depósitos
+                  </h3>
+                  <div className="h-[300px] w-full">
+                    {chartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorO" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorC" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorCa" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis
+                            dataKey="date"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: '#64748b', fontSize: 12 }}
+                            tickFormatter={(val) => {
+                              const d = new Date(val);
+                              const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+                              return `${d.getUTCDate().toString().padStart(2, '0')} ${months[d.getUTCMonth()]}`;
+                            }}
+                            dy={10}
+                          />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                            labelFormatter={(val) => {
+                              const d = new Date(val);
+                              return `${d.getUTCDate().toString().padStart(2, '0')}/${(d.getUTCMonth() + 1).toString().padStart(2, '0')}/${d.getUTCFullYear().toString().slice(-2)} 00:00`;
+                            }}
+                          />
+                          <Area type="monotone" dataKey="Pendente" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorO)" />
+                          <Area type="monotone" dataKey="Concluído" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorC)" />
+                          <Area type="monotone" dataKey="Cancelado" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorCa)" />
+                          <Area type="monotone" dataKey="Em Análise" stroke="#cbd5e1" strokeWidth={3} fillOpacity={0} fill="transparent" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                        <BarChart3 className="w-12 h-12 mb-3 opacity-20" />
+                        <p>Nenhum gráfico disponível nas datas consultadas.</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-6 mt-6">
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium whitespace-nowrap"><div className="w-3 h-3 rounded-full bg-blue-500"></div> Pendente</div>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium whitespace-nowrap"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Concluído</div>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium whitespace-nowrap"><div className="w-3 h-3 rounded-full bg-red-500"></div> Cancelado</div>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium whitespace-nowrap"><div className="w-3 h-3 rounded-full bg-slate-200"></div> Em Análise</div>
+                  </div>
+                </Card>
 
                 {/* Per-Profile Sales */}
                 <Card className="bg-white border-0 shadow-lg overflow-hidden">
@@ -666,7 +807,8 @@ export default function CreatorDashboard() {
                         <tr className="border-b bg-gray-50">
                           <th className="text-left py-3 px-5 font-semibold text-gray-600">Modelo / Perfil</th>
                           <th className="text-right py-3 px-5 font-semibold text-gray-600">PIX Gerados</th>
-                          <th className="text-right py-3 px-5 font-semibold text-gray-600">Total Vendas</th>
+                          <th className="text-right py-3 px-5 font-semibold text-gray-600">Vendas (Pagas)</th>
+                          <th className="text-right py-3 px-5 font-semibold text-gray-600">Total Vendas (R$)</th>
                           <th className="text-right py-3 px-5 font-semibold text-gray-600">Ticket Médio</th>
                         </tr>
                       </thead>
@@ -680,11 +822,14 @@ export default function CreatorDashboard() {
                             <td className="py-3 px-5 text-right">
                               <span className="inline-flex items-center gap-1 font-bold text-orange-600">{s.pixCount}</span>
                             </td>
+                            <td className="py-3 px-5 text-right font-medium">
+                              {s.salesCount}
+                            </td>
                             <td className="py-3 px-5 text-right">
                               <span className="font-bold text-green-600">R$ {(s.totalAmount / 100).toFixed(2)}</span>
                             </td>
                             <td className="py-3 px-5 text-right text-gray-600">
-                              R$ {s.pixCount > 0 ? (s.totalAmount / s.pixCount / 100).toFixed(2) : "0.00"}
+                              R$ {s.salesCount > 0 ? (s.totalAmount / s.salesCount / 100).toFixed(2) : "0.00"}
                             </td>
                           </tr>
                         ))}
@@ -723,7 +868,13 @@ export default function CreatorDashboard() {
             <Card className="p-6 bg-white border-0 shadow-lg">
               {/* Gateway Selection */}
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">Gateway Ativo</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium">Gateway Ativo</label>
+                  <button onClick={() => setShowSecrets(!showSecrets)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-orange-500 transition">
+                    {showSecrets ? <><EyeOff className="w-3.5 h-3.5" /> Esconder Chaves</> : <><Eye className="w-3.5 h-3.5" /> Mostrar Chaves</>}
+                  </button>
+                </div>
                 <select className="w-full px-4 py-3 border-2 rounded-xl text-sm font-medium focus:border-orange-500 outline-none transition"
                   value={gatewayConfig.gateway} onChange={e => setGatewayConfig({ ...gatewayConfig, gateway: e.target.value })}>
                   <option value="pushinpay">PushinPay</option>
@@ -732,6 +883,7 @@ export default function CreatorDashboard() {
                   <option value="vizzionpay">VizzionPay</option>
                   <option value="alphacash">AlphaCash</option>
                   <option value="buckpay">BuckPay</option>
+                  <option value="aureapag">AureaPag</option>
                 </select>
               </div>
 
@@ -741,7 +893,7 @@ export default function CreatorDashboard() {
                   <h3 className="font-bold text-orange-600">PushinPay</h3>
                   <div>
                     <label className="block text-sm font-medium mb-1">API Token</label>
-                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu token PushinPay aqui..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu token PushinPay aqui..."
                       value={gatewayConfig.pushinpay_token || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, pushinpay_token: e.target.value })} />
                     <p className="text-xs text-gray-500 mt-1">Encontre em: pushinpay.com.br → Configurações → API</p>
                   </div>
@@ -759,7 +911,7 @@ export default function CreatorDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Secret Key</label>
-                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
                       value={gatewayConfig.blackout_secret_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, blackout_secret_key: e.target.value })} />
                   </div>
                 </div>
@@ -776,7 +928,7 @@ export default function CreatorDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Client Secret</label>
-                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu Client Secret..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu Client Secret..."
                       value={gatewayConfig.novaplex_client_secret || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, novaplex_client_secret: e.target.value })} />
                   </div>
                 </div>
@@ -793,7 +945,7 @@ export default function CreatorDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Secret Key</label>
-                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
                       value={gatewayConfig.vizzionpay_secret_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, vizzionpay_secret_key: e.target.value })} />
                   </div>
                 </div>
@@ -810,8 +962,32 @@ export default function CreatorDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Secret Key (Chave Secreta)</label>
-                    <input type="password" className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole sua Secret Key..."
                       value={gatewayConfig.alphacash_secret_key || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, alphacash_secret_key: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              {/* AureaPag Fields */}
+              {gatewayConfig.gateway === "aureapag" && (
+                <div className="space-y-4 border-t pt-4">
+                  <h3 className="font-bold text-blue-500">AureaPag</h3>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">API Token</label>
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu API Token..."
+                      value={gatewayConfig.aureapag_api_token || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, aureapag_api_token: e.target.value })} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Hash da Oferta</label>
+                      <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Ex: 7becb"
+                        value={gatewayConfig.aureapag_offer_hash || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, aureapag_offer_hash: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Hash do Produto</label>
+                      <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Ex: 7tjdfkshdv"
+                        value={gatewayConfig.aureapag_product_hash || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, aureapag_product_hash: e.target.value })} />
+                    </div>
                   </div>
                 </div>
               )}
@@ -822,14 +998,8 @@ export default function CreatorDashboard() {
                   <h3 className="font-bold text-yellow-600">BuckPay</h3>
                   <div>
                     <label className="block text-sm font-medium mb-1">API Token</label>
-                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu token BuckPay (40 caracteres)..."
+                    <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Cole seu token BuckPay (40 caracteres)..."
                       value={gatewayConfig.buckpay_token || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, buckpay_token: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">User-Agent</label>
-                    <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder="Valor fornecido pelo gerente de contas..."
-                      value={gatewayConfig.buckpay_user_agent || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, buckpay_user_agent: e.target.value })} />
-                    <p className="text-xs text-gray-500 mt-1">Solicite ao seu gerente de contas BuckPay</p>
                   </div>
                 </div>
               )}
