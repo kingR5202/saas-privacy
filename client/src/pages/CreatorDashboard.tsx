@@ -172,6 +172,7 @@ export default function CreatorDashboard() {
   const [, navigate] = useLocation();
   const [activeSection, setActiveSection] = useState("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Privacy Header State
   const [showEmail, setShowEmail] = useState(false);
@@ -261,6 +262,10 @@ export default function CreatorDashboard() {
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [activeSection]);
 
   if (authLoading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin w-8 h-8" /></div>;
   if (!user) return null;
@@ -391,10 +396,10 @@ export default function CreatorDashboard() {
 
   // ─── Render Sections ────────────────────────────────────────────────
   const renderOverview = () => (
-    <div className="flex gap-6">
+    <div className="flex flex-col gap-6 lg:flex-row">
       <div className="flex-1 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
               <ChevronLeft className="w-4 h-4" /> Meus Funis
@@ -402,7 +407,7 @@ export default function CreatorDashboard() {
             <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
             <p className="text-slate-500">{editingProfile?.displayName || "Seu Nome"}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 self-start sm:self-auto">
             <span className="text-sm text-red-500 cursor-pointer hover:underline" onClick={() => { signOut(); navigate("/"); }}>Sair</span>
             <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-semibold">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Sistema Online
@@ -420,7 +425,7 @@ export default function CreatorDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Card className="p-5 bg-white border border-slate-200 shadow-sm">
             <p className="text-xs text-slate-500 font-semibold uppercase">Visualizações do Funil</p>
             <p className="text-3xl font-black text-orange-500 mt-1">{totalPix}</p>
@@ -470,7 +475,7 @@ export default function CreatorDashboard() {
       <Card className="p-12 text-center"><p className="text-slate-500">Selecione um perfil para editar ou crie um novo.</p></Card>
     );
     return (
-      <div className="flex gap-6">
+      <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 space-y-6">
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-1 cursor-pointer" onClick={() => setActiveSection("profiles")}>
             <ChevronLeft className="w-4 h-4" /> Meus Funis
@@ -492,7 +497,7 @@ export default function CreatorDashboard() {
           {/* Basic Info */}
           <Card className="p-6 bg-white border border-slate-200 shadow-sm space-y-5">
             <h3 className="font-bold text-slate-800">Informações Básicas do Perfil</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">Nome de Exibição</label>
                 <input className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:border-orange-500 outline-none"
@@ -535,7 +540,7 @@ export default function CreatorDashboard() {
           {/* Stats */}
           <Card className="p-6 bg-white border border-slate-200 shadow-sm space-y-4">
             <h3 className="font-bold text-slate-800">Números Sociais (Contadores)</h3>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label className="text-xs text-slate-500">Contador de Mídias (Ex: 412)</label>
                 <input type="number" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg" value={editingProfile.totalMedia || 0}
@@ -557,7 +562,7 @@ export default function CreatorDashboard() {
           {/* Images */}
           <Card className="p-6 bg-white border border-slate-200 shadow-sm space-y-4">
             <h3 className="font-bold text-slate-800">Imagens</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-2">Foto de Perfil</label>
                 <div className="flex items-center gap-3">
@@ -621,7 +626,7 @@ export default function CreatorDashboard() {
           {/* Social */}
           <Card className="p-6 bg-white border border-slate-200 shadow-sm space-y-4">
             <h3 className="font-bold text-slate-800">Redes Sociais</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="flex items-center gap-2">
                 <span className="text-lg">📷</span>
                 <input className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Link do Instagram..."
@@ -662,7 +667,7 @@ export default function CreatorDashboard() {
 
   const renderProfiles = () => (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold text-slate-800">Meus Funis</h2>
         <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={() => setShowCreateProfile(true)}>
           <Plus className="w-4 h-4" /> Novo Perfil
@@ -672,7 +677,7 @@ export default function CreatorDashboard() {
       {showCreateProfile && (
         <Card className="p-6 bg-white border border-slate-200 shadow-sm">
           <h3 className="font-bold text-lg mb-4">Criar Novo Perfil</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium mb-1">Username *</label>
               <input className="w-full px-3 py-2 border rounded-lg" placeholder="seunome" value={newProfile.username}
@@ -684,7 +689,7 @@ export default function CreatorDashboard() {
               <input className="w-full px-3 py-2 border rounded-lg" placeholder="Seu Nome" value={newProfile.displayName}
                 onChange={e => setNewProfile({ ...newProfile, displayName: e.target.value })} />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Bio</label>
               <textarea className="w-full px-3 py-2 border rounded-lg" rows={3} placeholder="Sua descrição..."
                 value={newProfile.bio} onChange={e => setNewProfile({ ...newProfile, bio: e.target.value })} />
@@ -926,7 +931,7 @@ export default function CreatorDashboard() {
               <input type={showSecrets ? "text" : "password"} className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
                 value={gatewayConfig.aureapag_api_token || ""} onChange={e => setGatewayConfig({ ...gatewayConfig, aureapag_api_token: e.target.value })} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium mb-1">Hash da Oferta</label>
                 <input className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
@@ -994,7 +999,7 @@ export default function CreatorDashboard() {
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="p-5 bg-gradient-to-br from-slate-800 to-slate-900 border-0 text-white shadow-lg">
               <div className="flex items-center justify-between">
                 <div>
@@ -1058,7 +1063,8 @@ export default function CreatorDashboard() {
 
           <Card className="bg-white border-0 shadow-lg overflow-hidden">
             <div className="p-5 border-b"><h3 className="font-bold text-lg">Vendas por Modelo</h3></div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
               <thead><tr className="border-b bg-slate-50">
                 <th className="text-left py-3 px-5 font-semibold text-slate-600">Modelo / Perfil</th>
                 <th className="text-right py-3 px-5 font-semibold text-slate-600">PIX Gerados</th>
@@ -1079,6 +1085,7 @@ export default function CreatorDashboard() {
                 {salesData.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nenhuma venda registrada.</td></tr>}
               </tbody>
             </table>
+            </div>
           </Card>
         </>
       )}
@@ -1102,13 +1109,13 @@ export default function CreatorDashboard() {
           </div>
           {selectedProfileId && (
             <>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
                 <h3 className="font-bold">Planos do perfil</h3>
                 <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={() => setShowCreatePlan(true)}><Plus className="w-4 h-4" /> Novo Plano</Button>
               </div>
               {showCreatePlan && (
                 <Card className="p-6 bg-white border border-slate-200 shadow-sm">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Nome do Plano *</label>
                       <input className="w-full px-3 py-2 border rounded-lg" placeholder="1 mês" value={newPlan.name}
@@ -1146,7 +1153,7 @@ export default function CreatorDashboard() {
               )}
               <div className="space-y-3">
                 {plans.length === 0 ? <p className="text-slate-500 text-center py-6">Nenhum plano criado.</p> : plans.map(plan => (
-                  <Card key={plan.id} className="p-4 bg-white border border-slate-200 flex items-center justify-between">
+                  <Card key={plan.id} className="p-4 bg-white border border-slate-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div><p className="font-bold">{plan.name}</p><p className="text-sm text-slate-500">{plan.description}</p></div>
                     <div className="flex items-center gap-4">
                       <span className="font-bold text-orange-600">R$ {(plan.priceInCents / 100).toFixed(2)}</span>
@@ -1224,7 +1231,7 @@ export default function CreatorDashboard() {
               <div className="space-y-4">
                 <textarea className="w-full px-3 py-2 border rounded-lg" rows={3}
                   value={editingPost.caption || ""} onChange={e => setEditingPost({ ...editingPost, caption: e.target.value })} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium mb-1 block">Curtidas</label>
                     <input type="number" min="0" className="w-full px-3 py-2 border rounded-lg"
@@ -1295,8 +1302,12 @@ export default function CreatorDashboard() {
   // ─── Main Layout ─────────────────────────────────────────────────────
   return (
     <div className="flex min-h-screen bg-slate-50">
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className={`${sidebarCollapsed ? 'w-16' : 'w-56'} bg-gradient-to-b from-[#1a1625] to-[#0f0d17] text-white flex flex-col transition-all duration-300 sticky top-0 h-screen`}>
+      <aside className={`${sidebarCollapsed ? 'w-16' : 'w-56'} hidden md:flex bg-gradient-to-b from-[#1a1625] to-[#0f0d17] text-white flex-col transition-all duration-300 sticky top-0 h-screen`}>
         {/* Logo */}
         <div className="p-4 flex items-center gap-3 border-b border-white/10">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-xs font-bold">P</div>
@@ -1352,8 +1363,70 @@ export default function CreatorDashboard() {
         </div>
       </aside>
 
+      {/* Mobile Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#1a1625] to-[#0f0d17] text-white flex flex-col transition-transform duration-300 md:hidden ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 flex items-center justify-between border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-xs font-bold">P</div>
+            <div>
+              <h1 className="font-bold text-sm text-orange-400">Privacy Admin</h1>
+              <p className="text-[10px] text-slate-400">Management Panel v2.1</p>
+            </div>
+          </div>
+          <button onClick={() => setMobileNavOpen(false)} className="p-2 rounded-lg text-slate-300 hover:bg-white/10">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+          {sidebarItems.map((item) => {
+            const isActive = activeSection === item.id;
+            return (
+              <button key={item.id}
+                onClick={() => { setActiveSection(item.id); if (item.id === "vendas") loadSalesData(); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  isActive ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}>
+                <item.icon className="w-4.5 h-4.5 flex-shrink-0" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+
+          <a href="https://bot-x.org/hottok?r=6846046252" target="_blank" rel="noopener noreferrer"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-pink-400 hover:text-pink-300 hover:bg-pink-500/10 transition">
+            <Flame className="w-4.5 h-4.5 flex-shrink-0" />
+            <span>IA Hot 🔥</span>
+          </a>
+        </nav>
+
+        <div className="p-3 space-y-2 border-t border-white/10">
+          <Button className="w-full bg-slate-700 hover:bg-slate-600 text-white text-sm gap-2 justify-start" onClick={handleUpdateProfile} disabled={saving}>
+            <Save className="w-4 h-4" /> {saving ? "Salvando..." : "Salvar Rascunho"}
+          </Button>
+          <Button className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-sm gap-2 justify-start"
+            onClick={() => { handleUpdateProfile(); if (editingProfile) window.open(`/${editingProfile.username}`, "_blank"); }}>
+            <ExternalLink className="w-4 h-4" /> Publicar Perfil
+          </Button>
+          <button onClick={() => { signOut(); navigate("/"); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-red-400 text-sm transition">
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
+        </div>
+      </aside>
+
       {/* Main Content */}
-      <main className="flex-1 p-6 overflow-y-auto">
+      <main className="flex-1 p-4 pt-3 sm:p-6 overflow-y-auto">
+        <div className="md:hidden mb-4 flex items-center justify-between">
+          <button onClick={() => setMobileNavOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
+            <LayoutDashboard className="w-4 h-4" /> Menu
+          </button>
+          <div className="text-right">
+            <p className="text-xs text-slate-500">Perfil ativo</p>
+            <p className="text-sm font-semibold text-slate-800">{editingProfile?.displayName || "Sem perfil"}</p>
+          </div>
+        </div>
+
         <div className="max-w-5xl mx-auto">
           {renderSection()}
         </div>
