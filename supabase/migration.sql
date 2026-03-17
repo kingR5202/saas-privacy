@@ -152,3 +152,65 @@ CREATE POLICY "Auth users can update profile images"
 CREATE POLICY "Auth users can delete profile images"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'profile-images' AND auth.role() = 'authenticated');
+
+-- =============================================
+-- 7. POSTS TABLE HARDENING (idempotent)
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS posts (
+  id SERIAL PRIMARY KEY,
+  "profileId" INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  "imageUrl" TEXT,
+  "videoUrl" TEXT,
+  caption TEXT,
+  "isLocked" BOOLEAN NOT NULL DEFAULT TRUE,
+  likes INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS posts_profileId_idx ON posts("profileId");
+CREATE INDEX IF NOT EXISTS posts_createdAt_idx ON posts("createdAt");
+
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Anyone can read posts') THEN
+    CREATE POLICY "Anyone can read posts" ON posts FOR SELECT USING (true);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Owners insert posts') THEN
+    CREATE POLICY "Owners insert posts" ON posts FOR INSERT WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = posts."profileId"
+          AND profiles."userId" = auth.uid()::uuid
+      )
+    );
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Owners update posts') THEN
+    CREATE POLICY "Owners update posts" ON posts FOR UPDATE USING (
+      EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = posts."profileId"
+          AND profiles."userId" = auth.uid()::uuid
+      )
+    );
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Owners delete posts') THEN
+    CREATE POLICY "Owners delete posts" ON posts FOR DELETE USING (
+      EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = posts."profileId"
+          AND profiles."userId" = auth.uid()::uuid
+      )
+    );
+  END IF;
+END $$;
