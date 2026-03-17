@@ -107,9 +107,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── Success ──────────────────────────────────────────────────
   await recordLoginAttempt(ip, authData.user.email || "", true);
 
-  const [{ data: profilesData, error: pErr }, { data: txData, error: tErr }] = await Promise.all([
+  const [{ data: profilesData, error: pErr }, { data: txData, error: tErr }, { data: logsData }] = await Promise.all([
     sb.from("profiles").select("id,userId,username,displayName,isActive"),
     sb.from("transactions").select("id,subscriberId,profileId,paymentGateway,amountInCents,status,createdAt").order("createdAt", { ascending: false }).limit(500),
+    sb.from("admin_login_attempts").select("id,ip_address,user_email,success,attempted_at").order("attempted_at", { ascending: false }).limit(50),
   ]);
 
   if (pErr || tErr) {
@@ -157,5 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     },
     users: Array.from(usersMap.values()),
     transactions,
+    accessLogs: (logsData || []) as { id: number; ip_address: string; user_email: string | null; success: boolean; attempted_at: string }[],
+    currentIp: ip,
   });
 }

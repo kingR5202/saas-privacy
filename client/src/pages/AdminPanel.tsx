@@ -15,6 +15,8 @@ import {
   BarChart3,
   Copy,
   CheckCircle2,
+  Shield,
+  AlertTriangle,
 } from "lucide-react";
 
 type AdminStats = {
@@ -44,6 +46,14 @@ type AdminTx = {
   createdAt: string;
 };
 
+type AccessLog = {
+  id: number;
+  ip_address: string;
+  user_email: string | null;
+  success: boolean;
+  attempted_at: string;
+};
+
 type ViewState =
   | "loading"
   | "totp-setup"
@@ -68,6 +78,8 @@ export default function AdminPanel() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [transactions, setTransactions] = useState<AdminTx[]>([]);
+  const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
+  const [currentIp, setCurrentIp] = useState("");
 
   // TOTP
   const [totpSecret, setTotpSecret] = useState("");
@@ -159,6 +171,8 @@ export default function AdminPanel() {
       setStats(d.stats);
       setUsers(d.users || []);
       setTransactions(d.transactions || []);
+      setAccessLogs(d.accessLogs || []);
+      setCurrentIp(d.currentIp || "");
       setView("dashboard");
       return true;
     } catch {
@@ -515,6 +529,54 @@ export default function AdminPanel() {
                     <td className="py-2 text-right">{u.totalPixPaid}</td>
                     <td className="py-2 text-right">
                       R$ {(u.totalAmount / 100).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-slate-900 border-slate-800">
+          <h2 className="font-semibold mb-3 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-emerald-400" /> Registro de Acessos ao Admin
+            {currentIp && <span className="text-xs text-slate-500 font-normal ml-auto">Seu IP: {currentIp}</span>}
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="text-left py-2">Data/Hora</th>
+                  <th className="text-left py-2">IP</th>
+                  <th className="text-left py-2">Email</th>
+                  <th className="text-left py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accessLogs.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-slate-500">
+                      Nenhum registro ainda
+                    </td>
+                  </tr>
+                )}
+                {accessLogs.map((log) => (
+                  <tr key={log.id} className="border-b border-slate-800/60">
+                    <td className="py-2 text-xs">
+                      {new Date(log.attempted_at).toLocaleString("pt-BR")}
+                    </td>
+                    <td className="py-2 font-mono text-xs">{log.ip_address}</td>
+                    <td className="py-2 text-xs">{log.user_email || "-"}</td>
+                    <td className="py-2">
+                      {log.success ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                          <CheckCircle2 className="w-3 h-3" /> Sucesso
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-red-400">
+                          <AlertTriangle className="w-3 h-3" /> Falhou
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
