@@ -8,6 +8,7 @@
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { detectScraping } from "./_security";
 
 function setCors(req: VercelRequest, res: VercelResponse) {
     const origin = req.headers.origin;
@@ -34,6 +35,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     setCors(req, res);
 
     if (req.method === "OPTIONS") return res.status(204).end();
+
+    // Anti-scraping: burst & sustained rate detection
+    if (detectScraping(req))
+        return res.status(429).json({ error: "Rate limit exceeded" });
 
     const sb = getSupabase();
     if (!sb) return res.status(500).json({ error: "Database not configured" });

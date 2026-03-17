@@ -1,5 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
+import {
+  setCors,
+  setSecurityHeaders,
+  getClientIp,
+  isIpAllowed,
+  isCountryBlocked,
+  validateRouteToken,
+  checkBruteForce,
+  recordLoginAttempt,
+  detectScraping,
+  getSupabaseAdmin,
+  getBearerToken,
+  isAllowedAdminEmail,
+  validateAdminSession,
+} from "./_security";
 
 type ProfileRow = {
   id: number;
@@ -19,53 +33,79 @@ type TxRow = {
   createdAt: string;
 };
 
-function getSupabaseAdmin() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
-function setCors(req: VercelRequest, res: VercelResponse) {
-  const origin = req.headers.origin;
-  const allowed = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
-  if (origin && allowed.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
-
-function getBearerToken(req: VercelRequest) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith("Bearer ")) return null;
-  return auth.slice(7);
-}
-
-function isAllowedAdminEmail(email?: string | null) {
-  if (!email) return false;
-  const allowed = (process.env.ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  return allowed.includes(email.toLowerCase());
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCors(req, res);
+  setCors(req, res, "GET, OPTIONS");
+  setSecurityHeaders(res);
+
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  const ip = getClientIp(req);
+
+  // Layer 1: Anti-scraping
+  if (detectScraping(req))
+    return res.status(429).json({ error: "Rate limit exceeded" });
+
+  // Layer 2: IP whitelist
+  if (!isIpAllowed(ip)) {
+    console.log(`[Admin] Blocked IP not in whitelist: ${ip}`);
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  // Layer 3: Geo-blocking
+  if (isCountryBlocked(req)) {
+    console.log(`[Admin] Blocked country: ${req.headers["x-vercel-ip-country"]} IP: ${ip}`);
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  // Layer 4: Route token
+  if (!validateRouteToken(req))
+    return res.status(403).json({ error: "Forbidden" });
+
+  // Layer 5: Brute force
+  const bf = await checkBruteForce(ip);
+  if (bf.blocked) {
+    console.log(`[Admin] Brute-force blocked IP: ${ip} (${bf.failedCount} failures)`);
+    return res.status(429).json({ error: "Bloqueado por tentativas excessivas. Tente em 24 h." });
+  }
+
+  // Layer 6: Auth
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(500).json({ error: "Server not configured" });
 
   const token = getBearerToken(req);
-  if (!token) return res.status(401).json({ error: "Missing token" });
+  if (!token) {
+    await recordLoginAttempt(ip, "unknown", false);
+    return res.status(401).json({ error: "Missing token" });
+  }
 
   const { data: authData, error: authErr } = await sb.auth.getUser(token);
-  if (authErr || !authData.user) return res.status(401).json({ error: "Invalid token" });
+  if (authErr || !authData.user) {
+    await recordLoginAttempt(ip, "invalid_token", false);
+    return res.status(401).json({ error: "Invalid token" });
+  }
 
+  // Layer 7: Admin email
   if (!isAllowedAdminEmail(authData.user.email)) {
+    await recordLoginAttempt(ip, authData.user.email || "unknown", false);
     return res.status(403).json({ error: "Forbidden" });
   }
+
+  // Layer 8: TOTP / Admin session
+  if (process.env.TOTP_ENCRYPTION_KEY) {
+    const sessionToken = req.headers["x-admin-session"] as string;
+    if (!validateAdminSession(sessionToken, authData.user.id)) {
+      const { data: fullUser } = await sb.auth.admin.getUserById(authData.user.id);
+      const totpVerified = fullUser?.user?.app_metadata?.totp_verified === true;
+      return res.status(403).json({
+        error: "TOTP_REQUIRED",
+        totpSetupNeeded: !totpVerified,
+      });
+    }
+  }
+
+  // ── Success ──────────────────────────────────────────────────
+  await recordLoginAttempt(ip, authData.user.email || "", true);
 
   const [{ data: profilesData, error: pErr }, { data: txData, error: tErr }] = await Promise.all([
     sb.from("profiles").select("id,userId,username,displayName,isActive"),

@@ -12,11 +12,14 @@ import CreatorDashboard from "./pages/CreatorDashboard";
 import AdminPanel from "./pages/AdminPanel";
 
 function Router() {
+  const adminToken = import.meta.env.VITE_ADMIN_ROUTE_TOKEN;
+  const adminPath = adminToken ? `/panel-${adminToken}` : "/admin";
+
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/auth" component={AuthPage} />
-      <Route path="/admin" component={AdminPanel} />
+      <Route path={adminPath} component={AdminPanel} />
       <Route path="/dashboard" component={CreatorDashboard} />
       <Route path="/404" component={NotFound} />
       <Route path="/:username" component={PublicProfile} />

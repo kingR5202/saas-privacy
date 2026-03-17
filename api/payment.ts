@@ -5,6 +5,7 @@
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { detectScraping } from "./_security";
 
 const rateWindowMs = 60_000;
 const maxRequestsPerWindow = Number(process.env.PAYMENT_RATE_LIMIT_PER_MIN || "30");
@@ -142,6 +143,11 @@ async function novaplexCheck(clientId: string, clientSecret: string, id: string)
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     setCors(req, res);
     if (req.method === "OPTIONS") return res.status(204).end();
+
+    // Anti-scraping: burst & sustained rate detection
+    if (detectScraping(req)) {
+        return res.status(429).json({ error: "Rate limit exceeded" });
+    }
 
     if (isRateLimited(req)) {
         return res.status(429).json({ error: "Too many requests" });
