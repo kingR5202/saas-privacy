@@ -13,7 +13,7 @@ const configWebhooks = {
     port: 21,
     localRoot: path.join(__dirname, 'hostinger'),
     remoteRoot: "/public_html/api/",
-    include: ["webhooks.php"],
+    include: ["*.php"],
     deleteRemote: false,
     forcePasv: true
 };
@@ -23,7 +23,7 @@ const configReact = {
     password: "Rtydfgxc5202@",
     host: "46.202.145.211",
     port: 21,
-    localRoot: path.join(__dirname, 'client/dist'),
+    localRoot: path.join(__dirname, 'dist/public'),
     remoteRoot: "/public_html/",
     include: ["*", "**/*"],
     exclude: ["api/**"],

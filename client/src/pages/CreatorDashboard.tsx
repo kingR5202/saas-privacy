@@ -199,15 +199,17 @@ export default function CreatorDashboard() {
   const [uploadingPic, setUploadingPic] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
-  // Image upload helper
+  // Image upload helper — uses Supabase Storage for stable, public URLs
   const uploadImage = async (file: File): Promise<string | null> => {
-    const formData = new FormData();
-    formData.append('image', file);
     try {
-      const resp = await fetch('/api/upload.php', { method: 'POST', body: formData });
-      const data = await resp.json();
-      if (!resp.ok) { alert('Erro ao enviar: ' + (data.error || 'Desconhecido')); return null; }
-      return data.url;
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage
+        .from('profile-images')
+        .upload(filename, file, { contentType: file.type, upsert: false });
+      if (error) { alert('Erro ao enviar imagem: ' + error.message); return null; }
+      const { data } = supabase.storage.from('profile-images').getPublicUrl(filename);
+      return data.publicUrl;
     } catch { alert('Erro de conexão ao enviar imagem'); return null; }
   };
 

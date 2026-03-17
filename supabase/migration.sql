@@ -118,3 +118,37 @@ CREATE POLICY "Profile owners can read transactions" ON transactions FOR SELECT 
 );
 -- Service role can insert (from API)
 CREATE POLICY "Service role can insert transactions" ON transactions FOR INSERT WITH CHECK (true);
+
+-- =============================================
+-- 6. STORAGE — Profile Images Bucket
+-- =============================================
+
+-- Create public bucket for profile/banner images
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'profile-images',
+  'profile-images',
+  TRUE,
+  10485760,
+  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp']
+) ON CONFLICT (id) DO NOTHING;
+
+-- Anyone can read (public bucket)
+CREATE POLICY "Public read profile images"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'profile-images');
+
+-- Authenticated users can upload
+CREATE POLICY "Auth users can upload profile images"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'profile-images' AND auth.role() = 'authenticated');
+
+-- Authenticated users can update (re-upload)
+CREATE POLICY "Auth users can update profile images"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'profile-images' AND auth.role() = 'authenticated');
+
+-- Authenticated users can delete
+CREATE POLICY "Auth users can delete profile images"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'profile-images' AND auth.role() = 'authenticated');
