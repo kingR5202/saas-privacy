@@ -1,338 +1,198 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+﻿import { useEffect, useMemo, useState } from "react";
+import { useSupabaseAuth } from "@/contexts/AuthContext";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
-import { Loader2, Users, DollarSign, Activity, Eye, EyeOff, BarChart3 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, ShieldAlert, Users, DollarSign, Activity, BarChart3 } from "lucide-react";
 
-const ADMIN_PASSWORD = "Rtydfgxc5202@";
-const MAX_LOGIN_ATTEMPTS = 5;
-const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-
-// XSS sanitization helper
-const sanitize = (str: string | null | undefined): string => {
-  if (!str) return "";
-  return str.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m] || m));
+type AdminStats = {
+  totalUsers: number;
+  totalProfiles: number;
+  totalPixGenerated: number;
+  totalPixPaid: number;
+  totalAmount: number;
+  activeCreators: number;
 };
 
-interface UserProfile {
+type AdminUser = {
   userId: string;
-  email: string;
-  profiles: { id: number; username: string; displayName: string }[];
-  totalPix: number;
+  profiles: number;
+  totalPixGenerated: number;
+  totalPixPaid: number;
   totalAmount: number;
-}
+};
 
-interface Transaction {
+type AdminTx = {
   id: number;
-  user_id: string;
-  profile_id: number;
-  gateway: string;
-  amount: number;
+  subscriberId: string;
+  profileId: number;
+  paymentGateway: string;
+  amountInCents: number;
   status: string;
-  created_at: string;
-}
+  createdAt: string;
+};
 
 export default function AdminPanel() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [password, setPassword] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [activeTab, setActiveTab] = useState<"users" | "transactions">("users");
-  const [showPassword, setShowPassword] = useState(false);
-  const [loginAttempts, setLoginAttempts] = useState(0);
+  const { user, session, loading: authLoading, signOut } = useSupabaseAuth();
+  const [, navigate] = useLocation();
 
-  // Session timeout
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [transactions, setTransactions] = useState<AdminTx[]>([]);
+
   useEffect(() => {
-    if (!authenticated) return;
-    const timer = setTimeout(() => setAuthenticated(false), SESSION_TIMEOUT);
-    return () => clearTimeout(timer);
-  }, [authenticated]);
-
-  const handleLogin = () => {
-    if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
-      setPasswordError("Muitas tentativas. Tente novamente mais tarde.");
-      return;
+    if (!authLoading && !user) {
+      navigate("/auth");
     }
-    if (password === ADMIN_PASSWORD) {
-      setAuthenticated(true);
-      setPasswordError("");
-      setLoginAttempts(0);
-      loadData();
-    } else {
-      setLoginAttempts(a => a + 1);
-      setPasswordError(`Senha incorreta (${loginAttempts + 1}/${MAX_LOGIN_ATTEMPTS})`);
-    }
-  };
+  }, [authLoading, user, navigate]);
 
-  const loadData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    async function load() {
+      if (!session?.access_token) return;
+      setLoading(true);
+      setError("");
 
-    // Load all profiles
-    const { data: profilesData } = await supabase.from("profiles").select("id, userId, username, displayName");
-    const profiles = profilesData || [];
-
-    // Load all transactions
-    const { data: txData } = await supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(200);
-    setTransactions((txData || []) as Transaction[]);
-
-    // Load auth users via profiles (group by userId)
-    const userMap = new Map<string, UserProfile>();
-    for (const p of profiles) {
-      if (!userMap.has(p.userId)) {
-        userMap.set(p.userId, {
-          userId: p.userId,
-          email: "",
-          profiles: [],
-          totalPix: 0,
-          totalAmount: 0,
+      try {
+        const res = await fetch("/api/admin", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
         });
-      }
-      userMap.get(p.userId)!.profiles.push({ id: p.id, username: p.username, displayName: p.displayName });
-    }
 
-    // Aggregate transactions per user
-    for (const tx of (txData || []) as Transaction[]) {
-      const u = userMap.get(tx.user_id);
-      if (u) {
-        u.totalPix++;
-        u.totalAmount += tx.amount;
-      } else {
-        userMap.set(tx.user_id, {
-          userId: tx.user_id,
-          email: "",
-          profiles: [],
-          totalPix: 1,
-          totalAmount: tx.amount,
-        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data?.error || "Acesso negado ao painel admin.");
+          setLoading(false);
+          return;
+        }
+
+        setStats(data.stats as AdminStats);
+        setUsers((data.users || []) as AdminUser[]);
+        setTransactions((data.transactions || []) as AdminTx[]);
+      } catch {
+        setError("Falha ao carregar dados administrativos.");
+      } finally {
+        setLoading(false);
       }
     }
 
-    setUsers(Array.from(userMap.values()));
-    setLoading(false);
-  };
+    load();
+  }, [session?.access_token]);
 
-  const totalUsers = users.length;
-  const totalProfiles = users.reduce((s, u) => s + u.profiles.length, 0);
-  const totalPix = transactions.length;
-  const totalAmount = transactions.reduce((s, t) => s + t.amount, 0);
+  const conversion = useMemo(() => {
+    if (!stats || stats.totalPixGenerated === 0) return 0;
+    return Math.round((stats.totalPixPaid / stats.totalPixGenerated) * 100);
+  }, [stats]);
 
-  if (!authenticated) {
+  if (authLoading || loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0f172a, #1e293b)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
-        <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, padding: 40, maxWidth: 400, width: "100%", textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #f97316, #ea580c)", margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <BarChart3 style={{ width: 32, height: 32, color: "#fff" }} />
-          </div>
-          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Privacy Admin</h1>
-          <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 24 }}>Painel Administrativo</p>
-          <div style={{ position: "relative", marginBottom: 16 }}>
-            <input
-              type={showPassword ? "text" : "password"} value={password}
-              onChange={e => { setPassword(e.target.value); setPasswordError(""); }}
-              onKeyDown={e => e.key === "Enter" && handleLogin()}
-              placeholder="Senha do admin"
-              style={{ width: "100%", padding: "14px 48px 14px 16px", background: "#0f172a", border: "1px solid #334155", borderRadius: 10, color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }}
-            />
-            <button onClick={() => setShowPassword(!showPassword)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#64748b" }}>
-              {showPassword ? <EyeOff style={{ width: 18, height: 18 }} /> : <Eye style={{ width: 18, height: 18 }} />}
-            </button>
-          </div>
-          {passwordError && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{passwordError}</p>}
-          <button onClick={handleLogin} style={{ width: "100%", padding: 14, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
-            Entrar
-          </button>
-        </div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
       </div>
     );
   }
 
-  if (loading) {
+  if (!user) return null;
+
+  if (error || !stats) {
     return (
-      <div style={{ minHeight: "100vh", background: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Loader2 className="animate-spin" style={{ width: 40, height: 40, color: "#f97316" }} />
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+        <Card className="max-w-lg w-full p-6 bg-slate-900 border-slate-800">
+          <div className="flex items-start gap-3 mb-4">
+            <ShieldAlert className="w-5 h-5 text-red-400 mt-0.5" />
+            <div>
+              <h1 className="text-lg font-bold text-white">Acesso administrativo bloqueado</h1>
+              <p className="text-sm text-slate-400 mt-1">Sua conta nao esta na lista de administradores autorizados.</p>
+            </div>
+          </div>
+          <p className="text-sm text-red-400 mb-4">{error || "Forbidden"}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/")}>Voltar</Button>
+            <Button className="bg-slate-700 hover:bg-slate-600" onClick={async () => { await signOut(); navigate("/auth"); }}>
+              Trocar conta
+            </Button>
+          </div>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", fontFamily: "'Inter', sans-serif", color: "#e2e8f0" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
-
-      {/* Header */}
-      <header style={{ background: "#1e293b", borderBottom: "1px solid #334155", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #f97316, #ea580c)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <BarChart3 style={{ width: 18, height: 18, color: "#fff" }} />
-          </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 style={{ fontSize: 16, fontWeight: 900, color: "#fff", margin: 0 }}>Privacy Admin</h1>
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Painel Administrativo</p>
+            <h1 className="text-2xl font-bold">Admin Seguro</h1>
+            <p className="text-slate-400 text-sm">Autenticado como {user.email}</p>
           </div>
-        </div>
-        <button onClick={() => setAuthenticated(false)} style={{ padding: "8px 16px", background: "#334155", border: "none", borderRadius: 8, color: "#94a3b8", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-          Sair
-        </button>
-      </header>
-
-      {/* Stats Cards */}
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 20px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
-          <Card style={{ padding: 20, background: "#1e293b", border: "1px solid #334155" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <p style={{ color: "#64748b", fontSize: 13, fontWeight: 600, margin: 0 }}>Usuários</p>
-                <p style={{ color: "#fff", fontSize: 28, fontWeight: 900, marginTop: 4 }}>{totalUsers}</p>
-              </div>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(59, 130, 246, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Users style={{ width: 22, height: 22, color: "#3b82f6" }} />
-              </div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 20, background: "#1e293b", border: "1px solid #334155" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <p style={{ color: "#64748b", fontSize: 13, fontWeight: 600, margin: 0 }}>Perfis Criados</p>
-                <p style={{ color: "#fff", fontSize: 28, fontWeight: 900, marginTop: 4 }}>{totalProfiles}</p>
-              </div>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(168, 85, 247, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Activity style={{ width: 22, height: 22, color: "#a855f7" }} />
-              </div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 20, background: "#1e293b", border: "1px solid #334155" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <p style={{ color: "#64748b", fontSize: 13, fontWeight: 600, margin: 0 }}>PIX Gerados</p>
-                <p style={{ color: "#fff", fontSize: 28, fontWeight: 900, marginTop: 4 }}>{totalPix}</p>
-              </div>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(249, 115, 22, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <BarChart3 style={{ width: 22, height: 22, color: "#f97316" }} />
-              </div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 20, background: "#1e293b", border: "1px solid #334155" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <p style={{ color: "#64748b", fontSize: 13, fontWeight: 600, margin: 0 }}>Total Vendas</p>
-                <p style={{ color: "#fff", fontSize: 28, fontWeight: 900, marginTop: 4 }}>R$ {(totalAmount / 100).toFixed(2)}</p>
-              </div>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(16, 185, 129, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <DollarSign style={{ width: 22, height: 22, color: "#10b981" }} />
-              </div>
-            </div>
-          </Card>
+          <Button variant="outline" onClick={async () => { await signOut(); navigate("/auth"); }}>Sair</Button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid #334155" }}>
-          {[
-            { id: "users" as const, label: "Usuários & Perfis" },
-            { id: "transactions" as const, label: "Transações" },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-              padding: "12px 20px", background: "none", border: "none", cursor: "pointer",
-              color: activeTab === tab.id ? "#f97316" : "#64748b", fontWeight: 700, fontSize: 14,
-              borderBottom: activeTab === tab.id ? "2px solid #f97316" : "2px solid transparent",
-            }}>
-              {tab.label}
-            </button>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="p-4 bg-slate-900 border-slate-800"><p className="text-xs text-slate-400">Usuarios</p><p className="text-2xl font-black mt-1">{stats.totalUsers}</p><Users className="w-4 h-4 text-blue-400 mt-2" /></Card>
+          <Card className="p-4 bg-slate-900 border-slate-800"><p className="text-xs text-slate-400">Perfis</p><p className="text-2xl font-black mt-1">{stats.totalProfiles}</p><Activity className="w-4 h-4 text-violet-400 mt-2" /></Card>
+          <Card className="p-4 bg-slate-900 border-slate-800"><p className="text-xs text-slate-400">PIX</p><p className="text-2xl font-black mt-1">{stats.totalPixGenerated}</p><p className="text-xs text-emerald-400 mt-1">{conversion}% conversao</p></Card>
+          <Card className="p-4 bg-slate-900 border-slate-800"><p className="text-xs text-slate-400">Vendas</p><p className="text-2xl font-black mt-1">R$ {(stats.totalAmount / 100).toFixed(2)}</p><DollarSign className="w-4 h-4 text-emerald-400 mt-2" /></Card>
         </div>
 
-        {/* Users Tab */}
-        {activeTab === "users" && (
-          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #334155" }}>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Usuário</th>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Perfis</th>
-                    <th style={{ padding: "14px 16px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>PIX Gerados</th>
-                    <th style={{ padding: "14px 16px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>Total Vendas</th>
+        <Card className="p-4 bg-slate-900 border-slate-800">
+          <h2 className="font-semibold mb-3 flex items-center gap-2"><BarChart3 className="w-4 h-4" /> Usuarios (resumo)</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="text-left py-2">User ID</th>
+                  <th className="text-right py-2">Perfis</th>
+                  <th className="text-right py-2">PIX</th>
+                  <th className="text-right py-2">Pagos</th>
+                  <th className="text-right py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.userId} className="border-b border-slate-800/60">
+                    <td className="py-2 font-mono text-xs">{u.userId}</td>
+                    <td className="py-2 text-right">{u.profiles}</td>
+                    <td className="py-2 text-right">{u.totalPixGenerated}</td>
+                    <td className="py-2 text-right">{u.totalPixPaid}</td>
+                    <td className="py-2 text-right">R$ {(u.totalAmount / 100).toFixed(2)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {users.map(u => (
-                    <tr key={u.userId} style={{ borderBottom: "1px solid #334155" }}>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ color: "#94a3b8", fontSize: 11, fontFamily: "monospace" }}>{u.userId.slice(0, 8)}...</span>
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        {u.profiles.length > 0 ? u.profiles.map(p => (
-                          <span key={p.id} style={{ display: "inline-block", padding: "4px 10px", background: "#334155", borderRadius: 6, marginRight: 6, marginBottom: 4, fontSize: 12, fontWeight: 600 }}>
-                            {p.displayName} <span style={{ color: "#64748b" }}>@{p.username}</span>
-                          </span>
-                        )) : <span style={{ color: "#64748b" }}>—</span>}
-                      </td>
-                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                        <span style={{ color: u.totalPix > 0 ? "#f97316" : "#64748b", fontWeight: 700 }}>{u.totalPix}</span>
-                      </td>
-                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                        <span style={{ color: u.totalAmount > 0 ? "#10b981" : "#64748b", fontWeight: 700 }}>
-                          R$ {(u.totalAmount / 100).toFixed(2)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {users.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 40, textAlign: "center", color: "#64748b" }}>Nenhum usuário encontrado</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+        </Card>
 
-        {/* Transactions Tab */}
-        {activeTab === "transactions" && (
-          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #334155" }}>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>ID</th>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Gateway</th>
-                    <th style={{ padding: "14px 16px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>Valor</th>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: "14px 16px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Data</th>
+        <Card className="p-4 bg-slate-900 border-slate-800">
+          <h2 className="font-semibold mb-3">Ultimas transacoes</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="text-left py-2">ID</th>
+                  <th className="text-left py-2">Gateway</th>
+                  <th className="text-right py-2">Valor</th>
+                  <th className="text-left py-2">Status</th>
+                  <th className="text-left py-2">Data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t) => (
+                  <tr key={t.id} className="border-b border-slate-800/60">
+                    <td className="py-2">#{t.id}</td>
+                    <td className="py-2">{t.paymentGateway || "-"}</td>
+                    <td className="py-2 text-right">R$ {((t.amountInCents || 0) / 100).toFixed(2)}</td>
+                    <td className="py-2">{t.status}</td>
+                    <td className="py-2">{new Date(t.createdAt).toLocaleString("pt-BR")}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {transactions.map(tx => (
-                    <tr key={tx.id} style={{ borderBottom: "1px solid #334155" }}>
-                      <td style={{ padding: "14px 16px", fontFamily: "monospace", fontSize: 11, color: "#94a3b8" }}>#{tx.id}</td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ padding: "4px 10px", background: tx.gateway === "pushinpay" ? "rgba(249,115,22,0.15)" : tx.gateway === "blackout" ? "rgba(100,116,139,0.2)" : "rgba(59,130,246,0.15)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: tx.gateway === "pushinpay" ? "#f97316" : tx.gateway === "blackout" ? "#94a3b8" : "#3b82f6" }}>
-                          {tx.gateway}
-                        </span>
-                      </td>
-                      <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 700, color: "#10b981" }}>
-                        R$ {(tx.amount / 100).toFixed(2)}
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: tx.status === "paid" ? "rgba(16,185,129,0.15)" : "rgba(234,179,8,0.15)", color: tx.status === "paid" ? "#10b981" : "#eab308" }}>
-                          {tx.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: "14px 16px", color: "#64748b", fontSize: 12 }}>
-                        {new Date(tx.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                    </tr>
-                  ))}
-                  {transactions.length === 0 && (
-                    <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: "#64748b" }}>Nenhuma transação registrada ainda</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+        </Card>
       </div>
     </div>
   );

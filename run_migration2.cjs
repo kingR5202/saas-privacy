@@ -1,9 +1,12 @@
 const { Client } = require('pg');
+const conn = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+if (!conn) {
+  throw new Error('Missing DATABASE_URL (or SUPABASE_DB_URL) environment variable.');
+}
 const c = new Client({
-  host: 'db.qcvrmbqyawmgezifunkh.supabase.co',
-  port: 5432, user: 'postgres', password: 'Rtydfgxc5202@',
-  database: 'postgres', ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 15000
+  connectionString: conn,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 15000,
 });
 (async () => {
   await c.connect();

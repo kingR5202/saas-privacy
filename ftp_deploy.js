@@ -6,11 +6,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ftpDeploy = new FtpDeploy();
 
+const FTP_USER = process.env.FTP_USER;
+const FTP_PASSWORD = process.env.FTP_PASSWORD;
+const FTP_HOST = process.env.FTP_HOST;
+const FTP_PORT = Number(process.env.FTP_PORT || "21");
+
+if (!FTP_USER || !FTP_PASSWORD || !FTP_HOST) {
+    throw new Error("Missing FTP_USER, FTP_PASSWORD or FTP_HOST environment variables.");
+}
+
 const configWebhooks = {
-    user: "u299847582.privacybrasil.blog",
-    password: "Rtydfgxc5202@",
-    host: "46.202.145.211",
-    port: 21,
+    user: FTP_USER,
+    password: FTP_PASSWORD,
+    host: FTP_HOST,
+    port: FTP_PORT,
     localRoot: path.join(__dirname, 'hostinger'),
     remoteRoot: "/public_html/api/",
     include: ["*.php"],
@@ -19,10 +28,10 @@ const configWebhooks = {
 };
 
 const configReact = {
-    user: "u299847582.privacybrasil.blog",
-    password: "Rtydfgxc5202@",
-    host: "46.202.145.211",
-    port: 21,
+    user: FTP_USER,
+    password: FTP_PASSWORD,
+    host: FTP_HOST,
+    port: FTP_PORT,
     localRoot: path.join(__dirname, 'dist/public'),
     remoteRoot: "/public_html/",
     include: ["*", "**/*"],

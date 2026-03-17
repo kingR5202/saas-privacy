@@ -9,6 +9,17 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
+function setCors(req: VercelRequest, res: VercelResponse) {
+    const origin = req.headers.origin;
+    const allowed = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+    if (origin && allowed.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
 // Initialize Supabase from Vercel env vars
 function getSupabase() {
     const url = process.env.SUPABASE_URL;
@@ -20,10 +31,7 @@ function getSupabase() {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // CORS
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    setCors(req, res);
 
     if (req.method === "OPTIONS") return res.status(204).end();
 
@@ -40,14 +48,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             case "profiles.getByUsername": {
                 const input = JSON.parse((url.searchParams.get("input") || "{}"));
                 const username = input?.["0"]?.json || input;
-                const { data } = await sb.from("profiles").select("*").eq("username", username).limit(1).single();
+                const { data } = await sb
+                    .from("profiles")
+                    .select("id,username,displayName,bio,profilePicUrl,bannerUrl,theme,totalSubscribers,totalPosts,totalMedia,totalExclusive,totalLikes,instagram_url,twitter_url,tiktok_url,onlyfans_url,telegram_url")
+                    .eq("username", username)
+                    .limit(1)
+                    .single();
                 return res.json([{ result: { data: { json: data } } }]);
             }
 
             case "subscriptionPlans.getByProfile": {
                 const input = JSON.parse((url.searchParams.get("input") || "{}"));
                 const profileId = input?.["0"]?.json || input;
-                const { data } = await sb.from("subscription_plans").select("*").eq("profileId", profileId).eq("isActive", true);
+                const { data } = await sb
+                    .from("subscription_plans")
+                    .select("id,profileId,name,description,priceInCents,billingCycle,isActive,createdAt")
+                    .eq("profileId", profileId)
+                    .eq("isActive", true);
                 return res.json([{ result: { data: { json: data || [] } } }]);
             }
 
