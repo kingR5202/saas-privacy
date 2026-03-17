@@ -6,6 +6,43 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
+const rateWindowMs = 60_000;
+const maxRequestsPerWindow = Number(process.env.PAYMENT_RATE_LIMIT_PER_MIN || "30");
+const paymentRateMap = new Map<string, { count: number; resetAt: number }>();
+
+function setCors(req: VercelRequest, res: VercelResponse) {
+    const origin = req.headers.origin;
+    const allowed = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+    if (origin && allowed.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+function getClientIp(req: VercelRequest) {
+    const xff = req.headers["x-forwarded-for"];
+    const val = Array.isArray(xff) ? xff[0] : xff;
+    return (val?.split(",")[0] || req.socket.remoteAddress || "unknown").trim();
+}
+
+function isRateLimited(req: VercelRequest) {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const entry = paymentRateMap.get(ip);
+
+    if (!entry || entry.resetAt <= now) {
+        paymentRateMap.set(ip, { count: 1, resetAt: now + rateWindowMs });
+        return false;
+    }
+
+    entry.count += 1;
+    if (entry.count > maxRequestsPerWindow) return true;
+    paymentRateMap.set(ip, entry);
+    return false;
+}
+
 function getSupabase() {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -103,20 +140,34 @@ async function novaplexCheck(clientId: string, clientSecret: string, id: string)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    setCors(req, res);
     if (req.method === "OPTIONS") return res.status(204).end();
+
+    if (isRateLimited(req)) {
+        return res.status(429).json({ error: "Too many requests" });
+    }
 
     const sb = getSupabase();
     if (!sb) return res.status(500).json({ error: "Database not configured" });
 
     try {
-        // Get userId from profileId or query
+        // Resolve owner by profile to avoid forged userId in requests
         const profileId = req.body?.profileId || req.query.profileId;
-        const userId = req.body?.userId || req.query.userId;
+        if (!profileId) return res.status(400).json({ error: "Profile ID required" });
 
-        if (!userId) return res.status(400).json({ error: "Missing userId" });
+        const parsedProfileId = parseInt(String(profileId), 10);
+        if (!Number.isFinite(parsedProfileId) || parsedProfileId <= 0) {
+            return res.status(400).json({ error: "Invalid profileId" });
+        }
+
+        const { data: profileData } = await sb
+            .from("profiles")
+            .select("userId")
+            .eq("id", parsedProfileId)
+            .limit(1)
+            .single();
+        if (!profileData?.userId) return res.status(404).json({ error: "Profile not found" });
+        const userId = profileData.userId;
 
         // Load gateway config
         const { data: gwConfig } = await sb.from("gateway_configs").select("*").eq("userId", userId).limit(1).single();
@@ -124,26 +175,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // POST: Create payment
         if (req.method === "POST") {
-            const amount = parseInt(req.body.amount);
-            if (!amount) return res.status(400).json({ error: "Amount required" });
+            const amount = parseInt(String(req.body?.amount || "0"), 10);
+            if (!Number.isFinite(amount) || amount < 100 || amount > 100000000) {
+                return res.status(400).json({ error: "Invalid amount" });
+            }
 
             let result;
+            let externalId = "";
             switch (gwConfig.gateway) {
                 case "pushinpay":
                     if (!gwConfig.pushinpay_token) return res.status(400).json({ error: "Token PushinPay não configurado" });
                     result = await pushinpayCreate(gwConfig.pushinpay_token, amount);
+                    externalId = result.id;
                     break;
                 case "blackout":
                     if (!gwConfig.blackout_public_key || !gwConfig.blackout_secret_key) return res.status(400).json({ error: "Chaves Blackout não configuradas" });
                     result = await blackoutCreate(gwConfig.blackout_public_key, gwConfig.blackout_secret_key, amount);
+                    externalId = result.transaction_id || result.id;
                     break;
                 case "novaplex":
                     if (!gwConfig.novaplex_client_id || !gwConfig.novaplex_client_secret) return res.status(400).json({ error: "Credenciais NovaPlex não configuradas" });
                     result = await novaplexCreate(gwConfig.novaplex_client_id, gwConfig.novaplex_client_secret, amount);
+                    externalId = result.id;
                     break;
                 default:
                     return res.status(400).json({ error: "Gateway desconhecido: " + gwConfig.gateway });
             }
+
+            if (externalId) {
+                // Salvar transação no banco de dados
+                const platformFee = Math.round(amount * 0.10); // 10% fee
+                const creatorEarnings = amount - platformFee;
+                
+                // Get a placeholder user ID if not provided (for public profile checkout)
+                // In a real app we'd map this better, but Drizzle schema requires subscriberId
+                const subscriberId = userId || 1; // Fallback or public user
+
+                const { error: txError } = await sb.from("transactions").insert({
+                    profileId: parsedProfileId,
+                    subscriberId: parseInt(subscriberId as string),
+                    amountInCents: amount,
+                    platformFeeInCents: platformFee,
+                    creatorEarningsInCents: creatorEarnings,
+                    status: "pending",
+                    paymentGateway: gwConfig.gateway,
+                    externalTransactionId: externalId
+                });
+                
+                if (txError) {
+                    console.error("[Payment API] Error saving transaction:", txError);
+                }
+            }
+
             return res.status(200).json(result);
         }
 
