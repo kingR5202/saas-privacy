@@ -108,3 +108,8 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# AI Memory & Agent instructions (local only, never push to GitHub)
+memory/
+CLAUDE.md
+
