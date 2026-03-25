@@ -3,7 +3,6 @@ import {
   setCors,
   setSecurityHeaders,
   getClientIp,
-  isIpAllowed,
   isCountryBlocked,
   validateRouteToken,
   checkBruteForce,
