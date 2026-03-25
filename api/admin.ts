@@ -46,11 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (detectScraping(req))
     return res.status(429).json({ error: "Rate limit exceeded" });
 
-  // Layer 2: IP whitelist
-  if (!isIpAllowed(ip)) {
-    console.log(`[Admin] Bloqueado por IP não autorizado: ${ip}`);
-    return res.status(403).json({ error: "Acesso negado: seu IP não está na lista de IPs autorizados (ADMIN_ALLOWED_IPS).", layer: "ip_whitelist" });
-  }
+  // Layer 2: IP whitelist (desabilitado — use ADMIN_EMAILS + TOTP para controle de acesso)
+  // if (!isIpAllowed(ip)) { ... }
 
   // Layer 3: Geo-blocking
   if (isCountryBlocked(req)) {

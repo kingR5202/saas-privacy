@@ -44,10 +44,8 @@ export default async function handler(
   const ip = getClientIp(req);
 
   // ── Security gates ───────────────────────────────────────────
-  if (!isIpAllowed(ip)) {
-    console.log(`[AdminTOTP] Bloqueado por IP não autorizado: ${ip}`);
-    return res.status(403).json({ error: "Acesso negado: seu IP não está na lista de IPs autorizados.", layer: "ip_whitelist" });
-  }
+  // Layer 2: IP whitelist (desabilitado — use ADMIN_EMAILS + TOTP para controle de acesso)
+  // if (!isIpAllowed(ip)) { ... }
   if (isCountryBlocked(req)) {
     console.log(`[AdminTOTP] Bloqueado por país: ${req.headers["x-vercel-ip-country"]} — IP: ${ip}`);
     return res.status(403).json({ error: "Acesso negado: conexões deste país estão bloqueadas.", layer: "geo_block" });
