@@ -48,25 +48,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Layer 2: IP whitelist
   if (!isIpAllowed(ip)) {
-    console.log(`[Admin] Blocked IP not in whitelist: ${ip}`);
-    return res.status(403).json({ error: "Forbidden" });
+    console.log(`[Admin] Bloqueado por IP não autorizado: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: seu IP não está na lista de IPs autorizados (ADMIN_ALLOWED_IPS).", layer: "ip_whitelist" });
   }
 
   // Layer 3: Geo-blocking
   if (isCountryBlocked(req)) {
-    console.log(`[Admin] Blocked country: ${req.headers["x-vercel-ip-country"]} IP: ${ip}`);
-    return res.status(403).json({ error: "Forbidden" });
+    console.log(`[Admin] Bloqueado por país: ${req.headers["x-vercel-ip-country"]} — IP: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: conexões deste país estão bloqueadas (BLOCKED_COUNTRIES).", layer: "geo_block" });
   }
 
   // Layer 4: Route token
-  if (!validateRouteToken(req))
-    return res.status(403).json({ error: "Forbidden" });
+  if (!validateRouteToken(req)) {
+    console.log(`[Admin] Token de rota inválido de IP: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: token de rota inválido (ADMIN_ROUTE_TOKEN).", layer: "route_token" });
+  }
 
   // Layer 5: Brute force
   const bf = await checkBruteForce(ip);
   if (bf.blocked) {
-    console.log(`[Admin] Brute-force blocked IP: ${ip} (${bf.failedCount} failures)`);
-    return res.status(429).json({ error: "Bloqueado por tentativas excessivas. Tente em 24 h." });
+    console.log(`[Admin] Bloqueado por força bruta: ${ip} (${bf.failedCount} falhas)`);
+    return res.status(429).json({ error: `Bloqueado por ${bf.failedCount} tentativas falhas. Acesso liberado em 24h. Para desbloquear agora, execute no Supabase: DELETE FROM admin_login_attempts WHERE success = false;`, layer: "brute_force" });
   }
 
   // Layer 6: Auth
@@ -87,8 +89,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Layer 7: Admin email
   if (!isAllowedAdminEmail(authData.user.email)) {
+    console.log(`[Admin] Email não autorizado: ${authData.user.email} de IP: ${ip}`);
     await recordLoginAttempt(ip, authData.user.email || "unknown", false);
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({
+      error: `Acesso negado: o email "${authData.user.email}" não está na lista de administradores. Configure a variável ADMIN_EMAILS no Vercel com este email.`,
+      layer: "email_whitelist",
+    });
   }
 
   // Layer 8: TOTP / Admin session

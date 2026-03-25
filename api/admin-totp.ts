@@ -44,18 +44,26 @@ export default async function handler(
   const ip = getClientIp(req);
 
   // ── Security gates ───────────────────────────────────────────
-  if (!isIpAllowed(ip))
-    return res.status(403).json({ error: "Forbidden" });
-  if (isCountryBlocked(req))
-    return res.status(403).json({ error: "Forbidden" });
-  if (!validateRouteToken(req))
-    return res.status(403).json({ error: "Forbidden" });
+  if (!isIpAllowed(ip)) {
+    console.log(`[AdminTOTP] Bloqueado por IP não autorizado: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: seu IP não está na lista de IPs autorizados.", layer: "ip_whitelist" });
+  }
+  if (isCountryBlocked(req)) {
+    console.log(`[AdminTOTP] Bloqueado por país: ${req.headers["x-vercel-ip-country"]} — IP: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: conexões deste país estão bloqueadas.", layer: "geo_block" });
+  }
+  if (!validateRouteToken(req)) {
+    console.log(`[AdminTOTP] Token de rota inválido de IP: ${ip}`);
+    return res.status(403).json({ error: "Acesso negado: token de rota inválido.", layer: "route_token" });
+  }
 
   const bf = await checkBruteForce(ip);
-  if (bf.blocked)
+  if (bf.blocked) {
+    console.log(`[AdminTOTP] IP bloqueado por força bruta: ${ip} (${bf.failedCount} falhas)`);
     return res
       .status(429)
-      .json({ error: "Bloqueado por tentativas excessivas. Tente em 24 h." });
+      .json({ error: `Bloqueado por ${bf.failedCount} tentativas falhas. Acesso liberado em 24h. Limpe a tabela admin_login_attempts no Supabase para desbloquear.`, layer: "brute_force" });
+  }
 
   // ── Auth ─────────────────────────────────────────────────────
   const sb = getSupabaseAdmin();
@@ -75,8 +83,12 @@ export default async function handler(
   }
 
   if (!isAllowedAdminEmail(authData.user.email)) {
+    console.log(`[AdminTOTP] Email não autorizado: ${authData.user.email} de IP: ${ip}`);
     await recordLoginAttempt(ip, authData.user.email || "", false);
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({
+      error: `Acesso negado: o email "${authData.user.email}" não está na lista de administradores (ADMIN_EMAILS). Configure esta variável de ambiente no Vercel.`,
+      layer: "email_whitelist",
+    });
   }
 
   // ── Route actions ────────────────────────────────────────────
