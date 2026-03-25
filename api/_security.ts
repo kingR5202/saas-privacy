@@ -201,7 +201,7 @@ export async function recordLoginAttempt(
       success,
       attempted_at: new Date().toISOString(),
     })
-    .then(() => {}, () => {});
+    .then(() => { }, () => { });
 
   if (success) {
     await sb
@@ -209,7 +209,7 @@ export async function recordLoginAttempt(
       .delete()
       .eq("ip_address", ip)
       .eq("success", false)
-      .then(() => {}, () => {});
+      .then(() => { }, () => { });
   }
 }
 
@@ -433,5 +433,7 @@ export function isAllowedAdminEmail(email?: string | null): boolean {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  if (allowed.length === 0) return true; // não configurado → permite todos os autenticados
   return allowed.includes(email.toLowerCase());
 }
+
