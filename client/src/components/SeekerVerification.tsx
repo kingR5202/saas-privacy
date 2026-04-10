@@ -12,6 +12,11 @@ export default function SeekerVerification({ displayName, onVerified }: SeekerVe
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  useEffect(() => {
+    // Tenta disparar a verificação automaticamente ao carregar
+    verify();
+  }, []);
+
   const verify = async () => {
     setLoading(true);
     setStatus("Processando verificação...");
