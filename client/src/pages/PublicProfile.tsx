@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRoute } from "wouter";
 import { supabase } from "@/lib/supabaseClient";
 import { Loader2 } from "lucide-react";
+import SeekerVerification from "@/components/SeekerVerification";
 
 interface Profile {
   id: number; userId: string; username: string; displayName: string; bio: string | null;
@@ -33,6 +34,12 @@ export default function PublicProfile() {
   const [expandedBio, setExpandedBio] = useState(false);
   const [mimoActive, setMimoActive] = useState(false);
   const [chatActive, setChatActive] = useState(false);
+  const [isVerified, setIsVerified] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("seeker_verified") === "true";
+    }
+    return false;
+  });
 
   const loadProfile = useCallback(async () => {
     if (!username) return;
@@ -104,6 +111,18 @@ export default function PublicProfile() {
   const bioMaxLen = 120;
   const bioText = profile.bio || "";
   const bioTruncated = bioText.length > bioMaxLen && !expandedBio;
+
+  if (!isVerified) {
+    return (
+      <SeekerVerification 
+        displayName={profile.displayName} 
+        onVerified={() => {
+          setIsVerified(true);
+          sessionStorage.setItem("seeker_verified", "true");
+        }} 
+      />
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: bg, fontFamily: "'Lato', 'Segoe UI', sans-serif", color: textColor }}>
@@ -362,8 +381,8 @@ export default function PublicProfile() {
 
       {/* ===== PIX MODAL ===== */}
       {showPixModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 15 }} onClick={() => setShowPixModal(false)}>
-          <div style={{ background: "#fff", borderRadius: 16, maxWidth: 400, width: "100%", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 15, overflowY: "auto" }} onClick={() => setShowPixModal(false)}>
+          <div style={{ background: "#fff", borderRadius: 16, maxWidth: 400, width: "100%", maxHeight: "90vh", overflowY: "auto", position: "relative" }} onClick={e => e.stopPropagation()}>
             <div style={{
               height: 120, backgroundSize: "cover", backgroundPosition: "center",
               background: profile.bannerUrl ? `url(${profile.bannerUrl}) center/cover` : "linear-gradient(135deg, #e67a3d, #f4a574)",

