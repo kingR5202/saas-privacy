@@ -34,12 +34,7 @@ export default function PublicProfile() {
   const [expandedBio, setExpandedBio] = useState(false);
   const [mimoActive, setMimoActive] = useState(false);
   const [chatActive, setChatActive] = useState(false);
-  const [isVerified, setIsVerified] = useState(() => {
-    if (typeof window !== "undefined") {
-      return sessionStorage.getItem("seeker_verified") === "true";
-    }
-    return false;
-  });
+  const [isVerified, setIsVerified] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!username) return;
